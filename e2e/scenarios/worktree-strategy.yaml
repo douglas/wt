@@ -1,0 +1,146 @@
+# E2E tests for worktree strategy and pattern configuration
+name: worktree-strategy
+description: Test worktree location strategies and patterns
+
+scenarios:
+  - name: strategy_global
+    description: Global strategy uses WORKTREE_ROOT/repo/branch
+    steps:
+      - run: WORKTREE_STRATEGY=global wt create feature-global
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /worktrees/test-repo/feature-global
+
+  - name: strategy_sibling_repo
+    description: Sibling-repo strategy uses repo-root/../repo-branch
+    steps:
+      - run: WORKTREE_STRATEGY=sibling-repo wt create feature/sibling
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /test-repo-feature-sibling
+
+  - name: strategy_parent_worktrees
+    description: Parent-worktrees strategy uses repo-root/../repo.worktrees/branch
+    steps:
+      - run: WORKTREE_STRATEGY=parent-worktrees wt create feature-parent
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /test-repo.worktrees/feature-parent
+
+  - name: strategy_parent_branches
+    description: Parent-branches strategy uses repo-root/../branch
+    steps:
+      - run: WORKTREE_STRATEGY=parent-branches wt create feature-repo-root
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /feature-repo-root
+
+  - name: strategy_parent_dotdir
+    description: Parent-dotdir strategy uses repo-root/../.worktrees/branch
+    steps:
+      - run: WORKTREE_STRATEGY=parent-dotdir wt create feature-local-root
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /.worktrees/feature-local-root
+
+  - name: strategy_inside_dotdir
+    description: Inside-dotdir strategy uses repo-root/.worktrees/branch
+    steps:
+      - run: WORKTREE_STRATEGY=inside-dotdir wt create feature-nested-local
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /test-repo/.worktrees/feature-nested-local
+
+  - name: strategy_custom_pattern
+    description: Custom pattern uses template variables
+    steps:
+      - run: WORKTREE_STRATEGY=custom WORKTREE_PATTERN="{.worktreeRoot}/custom/{.repo.Name}/{.branch}" wt create feature-custom
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /worktrees/custom/test-repo/feature-custom
+
+  - name: strategy_custom_pattern_missing_key
+    description: Custom pattern fails when referencing missing keys
+    steps:
+      - run: WORKTREE_STRATEGY=custom WORKTREE_PATTERN="{.missing}/{.branch}" wt create feature-missing
+        expect:
+          exit_code: 1
+
+  - name: strategy_branch_sanitized
+    description: Branch names are sanitized when using branchSafe
+    steps:
+      - run: WORKTREE_STRATEGY=custom WORKTREE_PATTERN="{.worktreeRoot}/{.repo.Name}/{.branchSafe}" wt create feature/sanitized
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /worktrees/test-repo/feature-sanitized
+
+  - name: strategy_branch_unsanitized
+    description: Branch names are not sanitized by default
+    steps:
+      - run: WORKTREE_STRATEGY=global wt create feature/unsanitized
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /worktrees/test-repo/feature/unsanitized
+
+  - name: strategy_from_worktree
+    description: Strategy works when invoked from a worktree
+    steps:
+      - run: WORKTREE_STRATEGY=global wt create feature-first
+        expect:
+          exit_code: 0
+      - cd: "$REPO_DIR/../worktrees/test-repo/feature-first"
+      - run: WORKTREE_STRATEGY=global wt create feature-second
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /worktrees/test-repo/feature-second
+
+  - name: strategy_custom_pattern_from_worktree_all_vars
+    description: Custom pattern uses all vars when invoked from a worktree
+    steps:
+      - run: git remote add origin https://github.com/acme/test-repo.git
+        expect:
+          exit_code: 0
+      - run: WORKTREE_STRATEGY=global wt create feature-base
+        expect:
+          exit_code: 0
+      - cd: "$REPO_DIR/../worktrees/test-repo/feature-base"
+      - run: WORKTREE_ROOT=worktrees WORKTREE_STRATEGY=custom WORKTREE_PATTERN="{.repo.Main}/../{.worktreeRoot}/custom/{.repo.Host}/{.repo.Owner}/{.repo.Name}/{.branchSafe}" wt create feature/custom-vars
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /worktrees/custom/github.com/acme/test-repo/feature-custom-vars
+
+  - name: strategy_repo_name_from_worktree_without_remote
+    description: Repo name is resolved from common dir when origin is missing
+    steps:
+      - run: WORKTREE_STRATEGY=global wt create feature-root
+        expect:
+          exit_code: 0
+      - cd: "$REPO_DIR/../worktrees/test-repo/feature-root"
+      - run: WORKTREE_STRATEGY=custom WORKTREE_PATTERN="{.worktreeRoot}/custom/{.repo.Name}/{.branch}" wt create feature-next
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /worktrees/custom/test-repo/feature-next

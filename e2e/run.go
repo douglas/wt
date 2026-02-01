@@ -79,6 +79,8 @@ func main() {
 	scenariosDir := flag.String("scenarios", "e2e/scenarios", "Directory containing scenario YAML files")
 	wtBinary := flag.String("wt", "", "Path to wt binary (default: auto-detect)")
 	verbose := flag.Bool("verbose", false, "Verbose output")
+	showOutput := flag.Bool("show-output", false, "Print scenario output for each run")
+	keepTmp := flag.Bool("keep-tmp", false, "Keep temporary directories created during tests")
 	flag.Parse()
 
 	// Determine shells to test
@@ -131,10 +133,16 @@ func main() {
 				}
 
 				// Run scenario
-				result := runScenario(binary, shell, file.Name, scenario, *verbose)
+				result := runScenario(binary, shell, file.Name, scenario, *verbose, *showOutput, *keepTmp)
 
 				if result.Passed {
 					fmt.Printf("PASS: %s/%s\n", file.Name, scenario.Name)
+					if *verbose && result.Output != "" {
+						fmt.Printf("  Output: %s\n", result.Output)
+					}
+					if *showOutput {
+						printScenarioOutput(result.Output)
+					}
 					passed++
 				} else {
 					fmt.Printf("FAIL: %s/%s\n", file.Name, scenario.Name)
@@ -143,6 +151,9 @@ func main() {
 					}
 					if *verbose && result.Output != "" {
 						fmt.Printf("  Output: %s\n", result.Output)
+					}
+					if *showOutput {
+						printScenarioOutput(result.Output)
 					}
 					failed++
 				}
@@ -158,6 +169,20 @@ func main() {
 
 	if failed > 0 {
 		os.Exit(1)
+	}
+}
+
+func printScenarioOutput(output string) {
+	if output == "" {
+		fmt.Println("  Output: (none)")
+		return
+	}
+	fmt.Println("  Output:")
+	for _, line := range strings.Split(output, "\n") {
+		if line == "" {
+			continue
+		}
+		fmt.Printf("    %s\n", line)
 	}
 }
 
@@ -270,14 +295,14 @@ func shouldSkip(scenario Scenario, shell string) bool {
 	return false
 }
 
-func runScenario(wtBinary, shell, fileName string, scenario Scenario, verbose bool) Result {
+func runScenario(wtBinary, shell, fileName string, scenario Scenario, verbose, showOutput, keepTmp bool) Result {
 	result := Result{
 		Scenario: fmt.Sprintf("%s/%s", fileName, scenario.Name),
 		Shell:    shell,
 	}
 
 	// Generate test script
-	script := generateScript(wtBinary, shell, scenario)
+	script := generateScript(wtBinary, shell, scenario, verbose, showOutput, keepTmp)
 
 	if verbose {
 		fmt.Printf("--- Script for %s ---\n%s\n---\n", scenario.Name, script)
@@ -309,14 +334,14 @@ func runScenario(wtBinary, shell, fileName string, scenario Scenario, verbose bo
 	return result
 }
 
-func generateScript(wtBinary, shell string, scenario Scenario) string {
+func generateScript(wtBinary, shell string, scenario Scenario, verbose, showOutput, keepTmp bool) string {
 	if shell == "powershell" || shell == "pwsh" {
-		return generatePowerShellScript(wtBinary, scenario)
+		return generatePowerShellScript(wtBinary, scenario, verbose, showOutput, keepTmp)
 	}
-	return generatePosixScript(wtBinary, shell, scenario)
+	return generatePosixScript(wtBinary, shell, scenario, verbose, showOutput, keepTmp)
 }
 
-func generatePosixScript(wtBinary, shell string, scenario Scenario) string {
+func generatePosixScript(wtBinary, shell string, scenario Scenario, verbose, showOutput, keepTmp bool) string {
 	var sb strings.Builder
 
 	// Header
@@ -326,12 +351,14 @@ func generatePosixScript(wtBinary, shell string, scenario Scenario) string {
 	sb.WriteString("REPO_DIR=\"$TEST_DIR/test-repo\"\n")
 	sb.WriteString("REPO_NAME=\"test-repo\"\n")
 	sb.WriteString("export WORKTREE_ROOT=\"$TEST_DIR/worktrees\"\n")
-	sb.WriteString("mkdir -p \"$REPO_DIR\" \"$WORKTREE_ROOT\"\n")
+	sb.WriteString("mkdir -p \"$REPO_DIR\"\n")
 	sb.WriteString("cd \"$REPO_DIR\"\n")
 	sb.WriteString("git init --quiet\n")
 	sb.WriteString("git config user.email 'test@example.com'\n")
 	sb.WriteString("git config user.name 'Test User'\n")
-	sb.WriteString("git commit --allow-empty -m 'initial' --quiet\n")
+	sb.WriteString("echo 'initial' > README.md\n")
+	sb.WriteString("git add README.md\n")
+	sb.WriteString("git commit -m 'initial' --quiet\n")
 	sb.WriteString("git branch -M main\n")
 	sb.WriteString(fmt.Sprintf("export PATH=\"%s:$PATH\"\n", filepath.Dir(wtBinary)))
 
@@ -419,13 +446,29 @@ func generatePosixScript(wtBinary, shell string, scenario Scenario) string {
 		}
 	}
 
+	if showOutput {
+		sb.WriteString("echo \"TEST_DIR=$TEST_DIR\"\n")
+		sb.WriteString("find \"$TEST_DIR\" -path '*/.git' -print -prune -o -print\n")
+	}
+
+	if verbose {
+		sb.WriteString("echo \"TEST_DIR=$TEST_DIR\"\n")
+		sb.WriteString("ls -R \"$TEST_DIR\"\n")
+	}
+
+	if keepTmp {
+		sb.WriteString("echo \"__TEST_DIR__=$TEST_DIR\"\n")
+	}
+
 	// Cleanup
-	sb.WriteString("rm -rf \"$TEST_DIR\"\n")
+	if !keepTmp {
+		sb.WriteString("rm -rf \"$TEST_DIR\"\n")
+	}
 
 	return sb.String()
 }
 
-func generatePowerShellScript(wtBinary string, scenario Scenario) string {
+func generatePowerShellScript(wtBinary string, scenario Scenario, verbose, showOutput, keepTmp bool) string {
 	var sb strings.Builder
 
 	// Header
@@ -435,12 +478,13 @@ func generatePowerShellScript(wtBinary string, scenario Scenario) string {
 	sb.WriteString("$RepoDir = Join-Path $TestDir 'test-repo'\n")
 	sb.WriteString("$env:WORKTREE_ROOT = Join-Path $TestDir 'worktrees'\n")
 	sb.WriteString("New-Item -ItemType Directory -Path $RepoDir -Force | Out-Null\n")
-	sb.WriteString("New-Item -ItemType Directory -Path $env:WORKTREE_ROOT -Force | Out-Null\n")
 	sb.WriteString("Push-Location $RepoDir\n")
 	sb.WriteString("git init --quiet\n")
 	sb.WriteString("git config user.email 'test@example.com'\n")
 	sb.WriteString("git config user.name 'Test User'\n")
-	sb.WriteString("git commit --allow-empty -m 'initial' --quiet\n")
+	sb.WriteString("Set-Content -Path 'README.md' -Value 'initial'\n")
+	sb.WriteString("git add 'README.md'\n")
+	sb.WriteString("git commit -m 'initial' --quiet\n")
 	sb.WriteString("git branch -M main\n")
 	sb.WriteString(fmt.Sprintf("$env:PATH = '%s;' + $env:PATH\n", filepath.Dir(wtBinary)))
 
@@ -547,7 +591,17 @@ func generatePowerShellScript(wtBinary string, scenario Scenario) string {
 
 	// Cleanup
 	sb.WriteString("Pop-Location\n")
-	sb.WriteString("Remove-Item -Recurse -Force $TestDir -ErrorAction SilentlyContinue\n")
+	if showOutput {
+		sb.WriteString("Write-Host \"TEST_DIR=$TestDir\"\n")
+		sb.WriteString("Get-ChildItem -Path $TestDir -Force -Recurse | ForEach-Object { $_.FullName }\n")
+	}
+	if verbose {
+		sb.WriteString("Write-Host \"TEST_DIR=$TestDir\"\n")
+		sb.WriteString("Get-ChildItem -Path $TestDir -Recurse | ForEach-Object { $_.FullName }\n")
+	}
+	if !keepTmp {
+		sb.WriteString("Remove-Item -Recurse -Force $TestDir -ErrorAction SilentlyContinue\n")
+	}
 
 	return sb.String()
 }

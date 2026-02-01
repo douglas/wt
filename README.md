@@ -12,7 +12,7 @@ Inspired by [haacked/dotfiles/tree-me](https://github.com/haacked/dotfiles/blob/
 
 ## Features
 
-- Organized worktree structure: `~/dev/worktrees/<repo>/<branch>`
+- Organized worktree structure: `~/dev/worktrees/<repo>/{.branch}`
 - Simple commands for common worktree operations
 - **Interactive selection menus** for checkout, remove, pr, and mr commands
 - GitHub PR support via `wt pr` command (uses `gh` CLI) — checks out the PR's actual branch name
@@ -94,12 +94,14 @@ wt init --uninstall  # Remove wt configuration from shell
 ```
 
 After running `wt init`, restart your shell or run:
+
 ```bash
 source ~/.bashrc   # for bash
 source ~/.zshrc    # for zsh
 ```
 
 Shell integration enables:
+
 - Automatic `cd` to worktree after `checkout`/`create`/`pr`/`mr` commands
 - Tab completion for commands and branch names
 
@@ -110,6 +112,7 @@ eval "$(wt shellenv)"
 ```
 
 **Note for zsh users:** Place this after `compinit` in your config file.
+
 
 ## Usage
 
@@ -229,12 +232,42 @@ wt rm add-auth-feature
 
 ### Worktree Location
 
-By default, worktrees are created at `~/dev/worktrees/<repo>/<branch>`.
+By default, worktrees are created at `~/dev/worktrees/<repo>/{.branch}` using the `global` strategy.
 
-Customize the location by setting the `WORKTREE_ROOT` environment variable:
+Configure the location with these environment variables:
+
+- `WORKTREE_ROOT` (default: `~/dev/worktrees`)
+- `WORKTREE_STRATEGY` (`global`, `sibling-repo`, `parent-branches`, `parent-worktrees`, `parent-dotdir`, `inside-dotdir`, `custom`)
+- `WORKTREE_PATTERN` (optional; overrides the default structure within the chosen strategy)
+
+Available pattern variables:
+
+- `{.repo.Name}` repo name
+- `{.repo.Main}` main branch worktree path
+- `{.repo.Owner}` repo owner/group (from origin URL)
+- `{.repo.Host}` git host (from origin URL)
+- `{.branch}` git branch name
+- `{.branchSafe}` git branch name (sanitized for filesystem paths)
+- `{.worktreeRoot}` value of `WORKTREE_ROOT`
+
+Default patterns per strategy:
+
+| Strategy | Description | Default pattern |
+| --- | --- | --- |
+| `global` | worktrees under a global directory | `{.worktreeRoot}/{.repo.Name}/{.branch}` |
+| `sibling-repo` | worktrees next to the main repo directory | `{.repo.Main}/../{.repo.Name}-{.branchSafe}` |
+| `parent-branches` | branches as siblings of main | `{.repo.Main}/../{.branch}` |
+| `parent-worktrees` | branches under `<repo>.worktrees/` | `{.repo.Main}/../{.repo.Name}.worktrees/{.branch}` |
+| `parent-dotdir` | branches under `.worktrees/` next to main | `{.repo.Main}/../.worktrees/{.branch}` |
+| `inside-dotdir` | branches under `.worktrees/` inside main | `{.repo.Main}/.worktrees/{.branch}` |
+| `custom` | user-defined pattern | `WORKTREE_PATTERN` |
+
+Customize the location by setting the environment variables:
 
 ```bash
 export WORKTREE_ROOT="$HOME/projects/worktrees"
+export WORKTREE_STRATEGY="sibling-repo"
+export WORKTREE_PATTERN="{.repo.Main}/../{.repo.Name}/{.branch}"
 ```
 
 Add this to your `~/.bashrc` or `~/.zshrc` to make it permanent.
@@ -244,6 +277,7 @@ Add this to your `~/.bashrc` or `~/.zshrc` to make it permanent.
 The project includes a `justfile` for common build tasks. Install [just](https://github.com/casey/just) to use it.
 
 Available tasks:
+
 ```bash
 just              # Show available recipes
 just build        # Build the binary
