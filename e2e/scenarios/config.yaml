@@ -1,0 +1,97 @@
+# E2E tests for `wt config` commands
+name: config
+description: Test configuration file management
+
+scenarios:
+  - name: config_path_outputs_path
+    description: Config path outputs a file path
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN config path
+        expect:
+          exit_code: 0
+          output_contains: "config.toml"
+
+  - name: config_show_defaults
+    description: Config show displays default values
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN config show
+        expect:
+          exit_code: 0
+          output_contains: "not found"
+      - run: $WT_BIN config show
+        expect:
+          output_contains: "global"
+
+  - name: config_show_sources
+    description: Config show displays source tracking
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN config show
+        expect:
+          exit_code: 0
+          output_contains: "default"
+
+  - name: config_init_creates_file
+    description: Config init creates a config file
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN --config "$TEST_DIR/wt-config/config.toml" config init
+        expect:
+          exit_code: 0
+          output_contains: "Created config file"
+      - run: cat "$TEST_DIR/wt-config/config.toml"
+        expect:
+          exit_code: 0
+          output_contains: "wt configuration file"
+
+  - name: config_init_fails_if_exists
+    description: Config init fails if file already exists
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN --config "$TEST_DIR/wt-config2/config.toml" config init
+        expect:
+          exit_code: 0
+      - run: $WT_BIN --config "$TEST_DIR/wt-config2/config.toml" config init
+        expect:
+          exit_code: 1
+          output_contains: "already exists"
+
+  - name: config_init_force_overwrites
+    description: Config init --force overwrites existing file
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN --config "$TEST_DIR/wt-config3/config.toml" config init
+        expect:
+          exit_code: 0
+      - run: $WT_BIN --config "$TEST_DIR/wt-config3/config.toml" config init --force
+        expect:
+          exit_code: 0
+          output_contains: "Created config file"
+
+  - name: config_file_sets_strategy
+    description: Config file values are used by wt info
+    skip_shellenv: true
+    steps:
+      - run: mkdir -p "$TEST_DIR/wt-cfg4" && printf 'strategy = "sibling-repo"\n' > "$TEST_DIR/wt-cfg4/config.toml"
+        expect:
+          exit_code: 0
+      - run: $WT_BIN --config "$TEST_DIR/wt-cfg4/config.toml" config show
+        expect:
+          exit_code: 0
+          output_contains: "sibling-repo"
+
+  - name: config_env_overrides_file
+    description: Environment variables override config file values
+    skip_shellenv: true
+    steps:
+      - run: mkdir -p "$TEST_DIR/wt-cfg5" && printf 'strategy = "global"\n' > "$TEST_DIR/wt-cfg5/config.toml"
+        expect:
+          exit_code: 0
+      - run: $WT_BIN --config "$TEST_DIR/wt-cfg5/config.toml" config show
+        env:
+          WORKTREE_STRATEGY: parent-branches
+        expect:
+          exit_code: 0
+          output_contains: "parent-branches"

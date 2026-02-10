@@ -31,6 +31,13 @@ func init() {
 }
 
 func main() {
+	// Re-load config after cobra parses flags so --config is available
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		if configFlag != "" {
+			loadWorktreeConfig()
+			rootCmd.Long = buildRootCmdLong()
+		}
+	}
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -46,6 +53,7 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
+	rootCmd.PersistentFlags().StringVar(&configFlag, "config", "", "Path to config file (default: ~/.config/wt/config.toml)")
 	rootCmd.AddCommand(checkoutCmd)
 	rootCmd.AddCommand(createCmd)
 	rootCmd.AddCommand(prCmd)
@@ -58,12 +66,14 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(infoCmd)
+	rootCmd.AddCommand(configCmd)
 	removeCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force removal even if worktree has modifications")
 	cleanupCmd.Flags().BoolVar(&cleanupDryRun, "dry-run", false, "Preview what would be removed without making changes")
 	cleanupCmd.Flags().BoolVarP(&cleanupForce, "force", "f", false, "Remove all merged worktrees without confirmation")
 	initCmd.Flags().BoolVar(&initDryRun, "dry-run", false, "Preview changes without modifying files")
 	initCmd.Flags().BoolVar(&initUninstall, "uninstall", false, "Remove wt configuration from shell")
 	initCmd.Flags().BoolVar(&initNoPrompt, "no-prompt", false, "Skip activation instructions (for automated installs)")
+	configInitCmd.Flags().BoolVar(&configInitForce, "force", false, "Overwrite existing config file")
 }
 
 // Helper functions
@@ -75,20 +85,7 @@ type repoInfo struct {
 	Name  string
 }
 
-func loadWorktreeConfig() {
-	worktreeRoot = os.Getenv("WORKTREE_ROOT")
-	if worktreeRoot == "" {
-		home, _ := os.UserHomeDir()
-		worktreeRoot = filepath.Join(home, "dev", "worktrees")
-	}
-
-	worktreeStrategy = strings.ToLower(strings.TrimSpace(os.Getenv("WORKTREE_STRATEGY")))
-	if worktreeStrategy == "" {
-		worktreeStrategy = "global"
-	}
-
-	worktreePattern = strings.TrimSpace(os.Getenv("WORKTREE_PATTERN"))
-}
+// loadWorktreeConfig is defined in config.go
 
 func buildRootCmdLong() string {
 	pattern, err := resolveWorktreePattern()
@@ -1181,7 +1178,14 @@ var infoCmd = &cobra.Command{
 			}
 		}
 
-		fmt.Printf(`Strategy: %s
+		configStatus := "not found, using defaults"
+		if configFileFound {
+			configStatus = "found"
+		}
+
+		fmt.Printf(`Config:   %s (%s)
+
+Strategy: %s
 Pattern:  %s
 Root:     %s
 
@@ -1192,13 +1196,79 @@ Strategies:
   parent-worktrees -> {.repo.Main}/../{.repo.Name}.worktrees/{.branch}
   parent-dotdir    -> {.repo.Main}/../.worktrees/{.branch}
   inside-dotdir    -> {.repo.Main}/.worktrees/{.branch}
-  custom           -> requires WORKTREE_PATTERN
+  custom           -> requires pattern setting
 
 Pattern variables: {.repo.Name}, {.repo.Main}, {.repo.Owner}, {.repo.Host}, {.branch}, {.branchSafe}, {.worktreeRoot}
 Note: {.branchSafe} is sanitized for filesystem paths (slashes replaced).
-`, worktreeStrategy, pattern, worktreeRoot)
+`, configFilePath, configStatus, worktreeStrategy, pattern, worktreeRoot)
 		return nil
 	},
+}
+
+var configInitForce bool
+
+var configCmd = &cobra.Command{
+	Use:   "config",
+	Short: "Manage wt configuration",
+	Run: func(cmd *cobra.Command, args []string) {
+		_ = cmd.Help()
+	},
+}
+
+var configInitCmd = &cobra.Command{
+	Use:   "init",
+	Short: "Create a default configuration file",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		path := resolveConfigPath(configFlag)
+		if err := writeDefaultConfig(path, configInitForce); err != nil {
+			return err
+		}
+		fmt.Printf("Created config file: %s\n", path)
+		return nil
+	},
+}
+
+var configShowCmd = &cobra.Command{
+	Use:   "show",
+	Short: "Show effective configuration with sources",
+	Run: func(cmd *cobra.Command, args []string) {
+		pattern, err := resolveWorktreePattern()
+		if err != nil {
+			pattern = worktreePattern
+			if pattern == "" {
+				pattern = "(none)"
+			}
+		}
+
+		configStatus := "not found"
+		if configFileFound {
+			configStatus = "found"
+		}
+
+		fmt.Printf("Config file: %s (%s)\n\n", configFilePath, configStatus)
+		fmt.Printf("Effective configuration:\n")
+		fmt.Printf("  %-10s = %-40s (%s)\n", "root", worktreeRoot, configSources.Root)
+		fmt.Printf("  %-10s = %-40s (%s)\n", "strategy", worktreeStrategy, configSources.Strategy)
+		if worktreePattern != "" {
+			fmt.Printf("  %-10s = %-40s (%s)\n", "pattern", worktreePattern, configSources.Pattern)
+		} else {
+			fmt.Printf("  %-10s = %-40s (%s)\n", "pattern", pattern, configSources.Pattern)
+		}
+	},
+}
+
+var configPathCmd = &cobra.Command{
+	Use:   "path",
+	Short: "Print the config file path",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(resolveConfigPath(configFlag))
+	},
+}
+
+func init() {
+	configCmd.AddCommand(configInitCmd)
+	configCmd.AddCommand(configShowCmd)
+	configCmd.AddCommand(configPathCmd)
 }
 
 var shellenvCmd = &cobra.Command{
@@ -1245,7 +1315,7 @@ function wt {
 Register-ArgumentCompleter -CommandName wt -ScriptBlock {
     param($commandName, $wordToComplete, $commandAst, $fakeBoundParameters)
 
-    $commands = @('checkout', 'co', 'create', 'pr', 'mr', 'list', 'ls', 'remove', 'rm', 'cleanup', 'prune', 'help', 'shellenv', 'init', 'info', 'version')
+    $commands = @('checkout', 'co', 'create', 'pr', 'mr', 'list', 'ls', 'remove', 'rm', 'cleanup', 'prune', 'help', 'shellenv', 'init', 'info', 'config', 'version')
 
     # Get the position in the command line
     $position = $commandAst.CommandElements.Count - 1
@@ -1263,6 +1333,10 @@ Register-ArgumentCompleter -CommandName wt -ScriptBlock {
                 if ($_ -match '\[([^\]]+)\]') { $matches[1] }
             }
             $branches | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+            }
+        } elseif ($subCommand -eq 'config') {
+            @('init', 'show', 'path') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }
@@ -1307,7 +1381,7 @@ if [ -n "$BASH_VERSION" ]; then
         COMPREPLY=()
         cur="${COMP_WORDS[COMP_CWORD]}"
         prev="${COMP_WORDS[COMP_CWORD-1]}"
-        commands="checkout co create pr mr list ls remove rm cleanup prune help shellenv init info version"
+        commands="checkout co create pr mr list ls remove rm cleanup prune help shellenv init info config version"
 
         # Complete commands if first argument
         if [ $COMP_CWORD -eq 1 ]; then
@@ -1321,6 +1395,10 @@ if [ -n "$BASH_VERSION" ]; then
                 local branches
                 branches=$(git worktree list 2>/dev/null | tail -n +2 | sed -n 's/.*\[\([^]]*\)\].*/\1/p')
                 COMPREPLY=( $(compgen -W "$branches" -- "$cur") )
+                return 0
+                ;;
+            config)
+                COMPREPLY=( $(compgen -W "init show path" -- "$cur") )
                 return 0
                 ;;
         esac
@@ -1348,6 +1426,7 @@ if [ -n "$ZSH_VERSION" ]; then
             'shellenv:Output shell function for auto-cd'
             'init:Initialize shell integration'
             'info:Show worktree location configuration'
+            'config:Manage wt configuration'
             'version:Show version information'
         )
 
@@ -1358,6 +1437,15 @@ if [ -n "$ZSH_VERSION" ]; then
                 checkout|co|remove|rm)
                     branches=(${(f)"$(git worktree list 2>/dev/null | tail -n +2 | sed -n 's/.*\[\([^]]*\)\].*/\1/p')"})
                     _describe 'branch' branches
+                    ;;
+                config)
+                    local -a config_cmds
+                    config_cmds=(
+                        'init:Create a default configuration file'
+                        'show:Show effective configuration with sources'
+                        'path:Print the config file path'
+                    )
+                    _describe 'config command' config_cmds
                     ;;
             esac
         fi
