@@ -19,7 +19,9 @@ scenarios:
     description: Info reflects custom strategy from environment
     skip_shellenv: true
     steps:
-      - run: WORKTREE_STRATEGY=sibling-repo $WT_BIN info
+      - run: $WT_BIN info
+        env:
+          WORKTREE_STRATEGY: sibling-repo
         expect:
           exit_code: 0
           output_contains: "Strategy: sibling-repo"

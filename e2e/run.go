@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -50,9 +51,10 @@ type FileSpec struct {
 
 // Test step (command + expectations)
 type Step struct {
-	Run    string  `yaml:"run"`
-	Cd     string  `yaml:"cd"`
-	Expect *Expect `yaml:"expect"`
+	Run    string            `yaml:"run"`
+	Cd     string            `yaml:"cd"`
+	Env    map[string]string `yaml:"env"`
+	Expect *Expect           `yaml:"expect"`
 }
 
 // Expectations for a step
@@ -396,6 +398,18 @@ func generatePosixScript(wtBinary, shell string, scenario Scenario, verbose, sho
 			sb.WriteString(fmt.Sprintf("cd %s\n", cd))
 		}
 		if step.Run != "" {
+			// Set step-level environment variables
+			if len(step.Env) > 0 {
+				keys := make([]string, 0, len(step.Env))
+				for k := range step.Env {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, k := range keys {
+					sb.WriteString(fmt.Sprintf("export %s='%s'\n", k, step.Env[k]))
+				}
+			}
+
 			runCmd := step.Run
 			needsOutput := step.Expect != nil && (step.Expect.OutputContains != "" || step.Expect.OutputNotContains != "")
 			expectsNonZero := step.Expect != nil && step.Expect.ExitCode != nil && *step.Expect.ExitCode != 0
@@ -523,6 +537,18 @@ func generatePowerShellScript(wtBinary string, scenario Scenario, verbose, showO
 			sb.WriteString(fmt.Sprintf("Set-Location %s\n", cd))
 		}
 		if step.Run != "" {
+			// Set step-level environment variables
+			if len(step.Env) > 0 {
+				keys := make([]string, 0, len(step.Env))
+				for k := range step.Env {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, k := range keys {
+					sb.WriteString(fmt.Sprintf("$env:%s = '%s'\n", k, step.Env[k]))
+				}
+			}
+
 			runCmd := step.Run
 			// Translate bash variables to PowerShell syntax
 			runCmd = strings.ReplaceAll(runCmd, "$WT_BIN", "$env:WT_BIN")
