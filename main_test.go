@@ -322,32 +322,127 @@ func TestParsePROutput(t *testing.T) {
 	}
 }
 
-func TestGetRepoName(t *testing.T) {
-	// This test verifies getRepoName works in the current repository
-	// It should return a non-empty repo name from either the remote URL or directory name
-	repoName, err := getRepoName()
-
-	if err != nil {
-		t.Fatalf("getRepoName() error = %v", err)
+func TestParseRemoteURL(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantHost  string
+		wantOwner string
+		wantName  string
+	}{
+		{
+			name:      "GitHub HTTPS",
+			input:     "https://github.com/acme/test-repo.git",
+			wantHost:  "github.com",
+			wantOwner: "acme",
+			wantName:  "test-repo",
+		},
+		{
+			name:      "GitHub SSH",
+			input:     "git@github.com:acme/test-repo.git",
+			wantHost:  "github.com",
+			wantOwner: "acme",
+			wantName:  "test-repo",
+		},
+		{
+			name:      "GitLab HTTPS nested group",
+			input:     "https://gitlab.com/group/subgroup/project.git",
+			wantHost:  "gitlab.com",
+			wantOwner: "group/subgroup",
+			wantName:  "project",
+		},
+		{
+			name:      "GitLab SSH nested group",
+			input:     "git@gitlab.com:group/subgroup/project.git",
+			wantHost:  "gitlab.com",
+			wantOwner: "group/subgroup",
+			wantName:  "project",
+		},
 	}
 
-	if repoName == "" {
-		t.Error("getRepoName() returned empty string")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := parseRemoteURL(tt.input)
+			if !ok {
+				t.Fatalf("parseRemoteURL(%q) returned ok=false", tt.input)
+			}
+			if got.Host != tt.wantHost {
+				t.Errorf("parseRemoteURL(%q) host = %q, want %q", tt.input, got.Host, tt.wantHost)
+			}
+			if got.Owner != tt.wantOwner {
+				t.Errorf("parseRemoteURL(%q) owner = %q, want %q", tt.input, got.Owner, tt.wantOwner)
+			}
+			if got.Name != tt.wantName {
+				t.Errorf("parseRemoteURL(%q) name = %q, want %q", tt.input, got.Name, tt.wantName)
+			}
+		})
+	}
+}
+
+func TestParseRemoteURLNegative(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "Empty string", input: ""},
+		{name: "Whitespace only", input: "   "},
+		{name: "HTTPS no path", input: "https://github.com"},
+		{name: "HTTPS single component", input: "https://github.com/user"},
+		{name: "HTTPS trailing slash only", input: "https://github.com/"},
+		{name: "SCP single component", input: "git@github.com:repo.git"},
 	}
 
-	// Verify the repo name doesn't contain .git suffix
-	if strings.HasSuffix(repoName, ".git") {
-		t.Errorf("getRepoName() = %q, should not contain .git suffix", repoName)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, ok := parseRemoteURL(tt.input)
+			if ok {
+				t.Errorf("parseRemoteURL(%q) returned ok=true, want ok=false", tt.input)
+			}
+		})
+	}
+}
+
+func TestParseRemoteURLWithoutGitSuffix(t *testing.T) {
+	// URLs without .git suffix should still parse correctly
+	tests := []struct {
+		name      string
+		input     string
+		wantHost  string
+		wantOwner string
+		wantName  string
+	}{
+		{
+			name:      "HTTPS without .git",
+			input:     "https://github.com/acme/test-repo",
+			wantHost:  "github.com",
+			wantOwner: "acme",
+			wantName:  "test-repo",
+		},
+		{
+			name:      "SCP without .git",
+			input:     "git@github.com:acme/test-repo",
+			wantHost:  "github.com",
+			wantOwner: "acme",
+			wantName:  "test-repo",
+		},
 	}
 
-	// Verify the repo name doesn't contain path separators
-	if strings.Contains(repoName, "/") || strings.Contains(repoName, "\\") {
-		t.Errorf("getRepoName() = %q, should not contain path separators", repoName)
-	}
-
-	// Verify it's not just whitespace
-	if strings.TrimSpace(repoName) == "" {
-		t.Error("getRepoName() returned only whitespace")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := parseRemoteURL(tt.input)
+			if !ok {
+				t.Fatalf("parseRemoteURL(%q) returned ok=false", tt.input)
+			}
+			if got.Host != tt.wantHost {
+				t.Errorf("parseRemoteURL(%q) host = %q, want %q", tt.input, got.Host, tt.wantHost)
+			}
+			if got.Owner != tt.wantOwner {
+				t.Errorf("parseRemoteURL(%q) owner = %q, want %q", tt.input, got.Owner, tt.wantOwner)
+			}
+			if got.Name != tt.wantName {
+				t.Errorf("parseRemoteURL(%q) name = %q, want %q", tt.input, got.Name, tt.wantName)
+			}
+		})
 	}
 }
 
@@ -764,42 +859,56 @@ func TestParseGitLabBranchName(t *testing.T) {
 	}
 }
 
-func TestEnsureWorktreePathCreatesMissingRoot(t *testing.T) {
+func TestBuildWorktreePathCreatesMissingRoot(t *testing.T) {
 	originalRoot := worktreeRoot
+	originalStrategy := worktreeStrategy
+	originalPattern := worktreePattern
 	t.Cleanup(func() {
 		worktreeRoot = originalRoot
+		worktreeStrategy = originalStrategy
+		worktreePattern = originalPattern
 	})
 
 	tmpDir := t.TempDir()
 	worktreeRoot = filepath.Join(tmpDir, "missing-root")
+	worktreeStrategy = "global"
+	worktreePattern = ""
 
 	repo := "example-repo"
 	branch := "feature/foo"
-
-	path, err := ensureWorktreePath(repo, branch)
-	if err != nil {
-		t.Fatalf("ensureWorktreePath() unexpected error: %v", err)
+	info := repoInfo{
+		Main: filepath.Join(tmpDir, repo),
+		Name: repo,
 	}
 
-	expectedPath := filepath.Join(worktreeRoot, repo, branch)
+	path, err := buildWorktreePath(info, branch)
+	if err != nil {
+		t.Fatalf("buildWorktreePath() unexpected error: %v", err)
+	}
+
+	expectedPath := filepath.Join(worktreeRoot, repo, "feature", "foo")
 	if path != expectedPath {
-		t.Fatalf("ensureWorktreePath() = %s, want %s", path, expectedPath)
+		t.Fatalf("buildWorktreePath() = %s, want %s", path, expectedPath)
 	}
 
 	repoDir := filepath.Join(worktreeRoot, repo)
-	info, statErr := os.Stat(repoDir)
+	statInfo, statErr := os.Stat(repoDir)
 	if statErr != nil {
 		t.Fatalf("expected repo directory to be created at %s: %v", repoDir, statErr)
 	}
-	if !info.IsDir() {
+	if !statInfo.IsDir() {
 		t.Fatalf("expected %s to be a directory", repoDir)
 	}
 }
 
-func TestEnsureWorktreePathFailsWhenRootIsFile(t *testing.T) {
+func TestBuildWorktreePathFailsWhenRootIsFile(t *testing.T) {
 	originalRoot := worktreeRoot
+	originalStrategy := worktreeStrategy
+	originalPattern := worktreePattern
 	t.Cleanup(func() {
 		worktreeRoot = originalRoot
+		worktreeStrategy = originalStrategy
+		worktreePattern = originalPattern
 	})
 
 	tmpDir := t.TempDir()
@@ -810,8 +919,197 @@ func TestEnsureWorktreePathFailsWhenRootIsFile(t *testing.T) {
 	}
 
 	worktreeRoot = fileRoot
+	worktreeStrategy = "global"
+	worktreePattern = ""
 
-	if _, err := ensureWorktreePath("repo", "branch"); err == nil {
-		t.Fatal("expected ensureWorktreePath() to fail when WORKTREE_ROOT is a file")
+	info := repoInfo{
+		Main: filepath.Join(tmpDir, "repo"),
+		Name: "repo",
+	}
+
+	if _, err := buildWorktreePath(info, "branch"); err == nil {
+		t.Fatal("expected buildWorktreePath() to fail when WORKTREE_ROOT is a file")
+	}
+}
+
+func TestBuildWorktreePathStrategies(t *testing.T) {
+	originalRoot := worktreeRoot
+	originalStrategy := worktreeStrategy
+	originalPattern := worktreePattern
+	t.Cleanup(func() {
+		worktreeRoot = originalRoot
+		worktreeStrategy = originalStrategy
+		worktreePattern = originalPattern
+	})
+
+	tmpDir := t.TempDir()
+	worktreeRoot = filepath.Join(tmpDir, "worktrees")
+
+	repoRoot := filepath.Join(tmpDir, "repo")
+	info := repoInfo{
+		Main: repoRoot,
+		Name: "repo",
+	}
+	tests := []struct {
+		name     string
+		strategy string
+		branch   string
+		want     string
+	}{
+		{
+			name:     "global",
+			strategy: "global",
+			branch:   "feature-branch",
+			want:     filepath.Join(worktreeRoot, "repo", "feature-branch"),
+		},
+		{
+			name:     "sibling-repo",
+			strategy: "sibling-repo",
+			branch:   "feature/sibling",
+			want:     filepath.Join(tmpDir, "repo-feature-sibling"),
+		},
+		{
+			name:     "parent-worktrees",
+			strategy: "parent-worktrees",
+			branch:   "feature-branch",
+			want:     filepath.Join(tmpDir, "repo.worktrees", "feature-branch"),
+		},
+		{
+			name:     "parent-branches",
+			strategy: "parent-branches",
+			branch:   "feature-branch",
+			want:     filepath.Join(tmpDir, "feature-branch"),
+		},
+		{
+			name:     "parent-dotdir",
+			strategy: "parent-dotdir",
+			branch:   "feature-branch",
+			want:     filepath.Join(tmpDir, ".worktrees", "feature-branch"),
+		},
+		{
+			name:     "inside-dotdir",
+			strategy: "inside-dotdir",
+			branch:   "feature-branch",
+			want:     filepath.Join(repoRoot, ".worktrees", "feature-branch"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			worktreeStrategy = tt.strategy
+			worktreePattern = ""
+
+			path, err := buildWorktreePath(info, tt.branch)
+			if err != nil {
+				t.Fatalf("buildWorktreePath() unexpected error: %v", err)
+			}
+			if path != tt.want {
+				t.Fatalf("buildWorktreePath() = %s, want %s", path, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildWorktreePathCustomPattern(t *testing.T) {
+	originalRoot := worktreeRoot
+	originalStrategy := worktreeStrategy
+	originalPattern := worktreePattern
+	t.Cleanup(func() {
+		worktreeRoot = originalRoot
+		worktreeStrategy = originalStrategy
+		worktreePattern = originalPattern
+	})
+
+	tmpDir := t.TempDir()
+	worktreeRoot = filepath.Join(tmpDir, "worktrees")
+	worktreeStrategy = "custom"
+	worktreePattern = "{.worktreeRoot}/custom/{.repo.Name}/{.branch}"
+
+	info := repoInfo{
+		Main: filepath.Join(tmpDir, "repo"),
+		Name: "repo",
+	}
+
+	path, err := buildWorktreePath(info, "feat")
+	if err != nil {
+		t.Fatalf("buildWorktreePath() unexpected error: %v", err)
+	}
+
+	expectedPath := filepath.Join(worktreeRoot, "custom", "repo", "feat")
+	if path != expectedPath {
+		t.Fatalf("buildWorktreePath() = %s, want %s", path, expectedPath)
+	}
+}
+
+func TestBuildWorktreePathSanitizesBranch(t *testing.T) {
+	originalRoot := worktreeRoot
+	originalStrategy := worktreeStrategy
+	originalPattern := worktreePattern
+	t.Cleanup(func() {
+		worktreeRoot = originalRoot
+		worktreeStrategy = originalStrategy
+		worktreePattern = originalPattern
+	})
+
+	tmpDir := t.TempDir()
+	worktreeRoot = filepath.Join(tmpDir, "worktrees")
+	worktreeStrategy = "custom"
+	worktreePattern = "{.worktreeRoot}/{.repo.Name}/{.branchSafe}"
+
+	info := repoInfo{
+		Main: filepath.Join(tmpDir, "repo"),
+		Name: "repo",
+	}
+
+	branch := "feature/with/slash"
+	wantBranch := "feature-with-slash"
+	path, err := buildWorktreePath(info, branch)
+	if err != nil {
+		t.Fatalf("buildWorktreePath() unexpected error: %v", err)
+	}
+
+	expectedPath := filepath.Join(worktreeRoot, "repo", wantBranch)
+	if path != expectedPath {
+		t.Fatalf("buildWorktreePath() = %s, want %s", path, expectedPath)
+	}
+}
+
+func TestBuildWorktreePathMissingPatternKey(t *testing.T) {
+	originalRoot := worktreeRoot
+	originalStrategy := worktreeStrategy
+	originalPattern := worktreePattern
+	t.Cleanup(func() {
+		worktreeRoot = originalRoot
+		worktreeStrategy = originalStrategy
+		worktreePattern = originalPattern
+	})
+
+	worktreeRoot = t.TempDir()
+	worktreeStrategy = "custom"
+	worktreePattern = "{.missing}/{.branch}"
+
+	info := repoInfo{
+		Main: filepath.Join(worktreeRoot, "repo"),
+		Name: "repo",
+	}
+
+	if _, err := buildWorktreePath(info, "branch"); err == nil {
+		t.Fatal("expected buildWorktreePath() to fail when pattern references missing keys")
+	}
+}
+
+func TestResolveWorktreePatternCustomRequiresPattern(t *testing.T) {
+	originalStrategy := worktreeStrategy
+	originalPattern := worktreePattern
+	t.Cleanup(func() {
+		worktreeStrategy = originalStrategy
+		worktreePattern = originalPattern
+	})
+
+	worktreeStrategy = "custom"
+	worktreePattern = ""
+
+	if _, err := resolveWorktreePattern(); err == nil {
+		t.Fatal("expected resolveWorktreePattern() to fail when custom pattern is missing")
 	}
 }

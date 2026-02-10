@@ -1,32 +1,33 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+	"text/template"
 
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
 
 var (
-	version      = "dev"
-	worktreeRoot string
+	version          = "dev"
+	worktreeRoot     string
+	worktreeStrategy string
+	worktreePattern  string
 )
 
 func init() {
-	// Set worktree root from environment or default
-	worktreeRoot = os.Getenv("WORKTREE_ROOT")
-	if worktreeRoot == "" {
-		home, _ := os.UserHomeDir()
-		worktreeRoot = filepath.Join(home, "dev", "worktrees")
-	}
+	loadWorktreeConfig()
+	rootCmd.Long = buildRootCmdLong()
 }
 
 func main() {
@@ -38,10 +39,7 @@ func main() {
 var rootCmd = &cobra.Command{
 	Use:   "wt",
 	Short: "Git worktree helper with organized directory structure",
-	Long: `Git-like worktree management with organized directory structure.
-
-Worktrees are organized at: ` + worktreeRoot + `/<repo>/<branch>
-Set WORKTREE_ROOT to customize the location.`,
+	Long:  "",
 	Run: func(cmd *cobra.Command, args []string) {
 		_ = cmd.Help()
 	},
@@ -59,6 +57,7 @@ func init() {
 	rootCmd.AddCommand(shellenvCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(infoCmd)
 	removeCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force removal even if worktree has modifications")
 	cleanupCmd.Flags().BoolVar(&cleanupDryRun, "dry-run", false, "Preview what would be removed without making changes")
 	cleanupCmd.Flags().BoolVarP(&cleanupForce, "force", "f", false, "Remove all merged worktrees without confirmation")
@@ -69,24 +68,49 @@ func init() {
 
 // Helper functions
 
-func getRepoName() (string, error) {
-	// Try to get from remote origin URL
-	cmd := exec.Command("git", "remote", "get-url", "origin")
-	output, err := cmd.Output()
-	if err == nil {
-		url := strings.TrimSpace(string(output))
-		base := filepath.Base(url)
-		return strings.TrimSuffix(base, ".git"), nil
+type repoInfo struct {
+	Main  string
+	Host  string
+	Owner string
+	Name  string
+}
+
+func loadWorktreeConfig() {
+	worktreeRoot = os.Getenv("WORKTREE_ROOT")
+	if worktreeRoot == "" {
+		home, _ := os.UserHomeDir()
+		worktreeRoot = filepath.Join(home, "dev", "worktrees")
 	}
 
-	// Fallback to toplevel directory name
-	cmd = exec.Command("git", "rev-parse", "--show-toplevel")
-	output, err = cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("not in a git repository")
+	worktreeStrategy = strings.ToLower(strings.TrimSpace(os.Getenv("WORKTREE_STRATEGY")))
+	if worktreeStrategy == "" {
+		worktreeStrategy = "global"
 	}
-	toplevel := strings.TrimSpace(string(output))
-	return filepath.Base(toplevel), nil
+
+	worktreePattern = strings.TrimSpace(os.Getenv("WORKTREE_PATTERN"))
+}
+
+func buildRootCmdLong() string {
+	pattern, err := resolveWorktreePattern()
+	if err != nil {
+		pattern = worktreePattern
+		if pattern == "" {
+			pattern = "unknown"
+		}
+	}
+
+	return fmt.Sprintf(`Git-like worktree management with organized directory structure.
+
+Strategy: %s
+Pattern:  %s
+Root:     %s
+
+Run 'wt info' to see available strategies and pattern variables.
+Set WORKTREE_ROOT, WORKTREE_STRATEGY, and WORKTREE_PATTERN to customize.`,
+		worktreeStrategy,
+		pattern,
+		worktreeRoot,
+	)
 }
 
 func getDefaultBase() string {
@@ -97,6 +121,171 @@ func getDefaultBase() string {
 	}
 	ref := strings.TrimSpace(string(output))
 	return strings.TrimPrefix(ref, "refs/remotes/origin/")
+}
+
+func getRepoInfo() (repoInfo, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	output, err := cmd.Output()
+	var repoRoot string
+	isBare := false
+	if err == nil {
+		repoRoot = strings.TrimSpace(string(output))
+	} else {
+		cmd = exec.Command("git", "rev-parse", "--is-bare-repository")
+		output, err = cmd.Output()
+		if err != nil || strings.TrimSpace(string(output)) != "true" {
+			return repoInfo{}, fmt.Errorf("not in a git repository")
+		}
+		isBare = true
+		cmd = exec.Command("git", "rev-parse", "--absolute-git-dir")
+		output, err = cmd.Output()
+		if err != nil {
+			return repoInfo{}, fmt.Errorf("not in a git repository")
+		}
+		repoRoot = strings.TrimSpace(string(output))
+	}
+	repoName := ""
+	remoteURL := ""
+	cmd = exec.Command("git", "remote", "get-url", "origin")
+	output, err = cmd.Output()
+	if err == nil {
+		remoteURL = strings.TrimSpace(string(output))
+		if parsed, ok := parseRemoteURL(remoteURL); ok {
+			repoName = parsed.Name
+		}
+	}
+	if repoName == "" {
+		repoName = strings.TrimSuffix(filepath.Base(repoRoot), ".git")
+		if commonCmd := exec.Command("git", "rev-parse", "--git-common-dir"); commonCmd != nil {
+			if commonOutput, commonErr := commonCmd.Output(); commonErr == nil {
+				commonDir := strings.TrimSpace(string(commonOutput))
+				if commonDir != "" {
+					if !filepath.IsAbs(commonDir) {
+						commonDir = filepath.Join(repoRoot, commonDir)
+					}
+					commonDir = filepath.Clean(commonDir)
+					base := filepath.Base(commonDir)
+					if base == ".git" {
+						repoName = filepath.Base(filepath.Dir(commonDir))
+					} else {
+						repoName = strings.TrimSuffix(base, ".git")
+					}
+				}
+			}
+		}
+	}
+	info := repoInfo{
+		Main: getMainWorktreePath(getDefaultBase(), repoName, repoRoot, isBare),
+		Name: repoName,
+	}
+
+	if remoteURL != "" {
+		if parsed, ok := parseRemoteURL(remoteURL); ok {
+			info.Host = parsed.Host
+			info.Owner = parsed.Owner
+		}
+	}
+
+	return info, nil
+}
+
+func getMainWorktreePath(defaultBranch, repoName, repoRoot string, isBare bool) string {
+	cmd := exec.Command("git", "worktree", "list", "--porcelain")
+	output, err := cmd.Output()
+	if err == nil {
+		type entry struct {
+			path   string
+			branch string
+		}
+		var entries []entry
+		var current entry
+		for _, line := range strings.Split(string(output), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			if strings.HasPrefix(line, "worktree ") {
+				if current.path != "" {
+					entries = append(entries, current)
+				}
+				current = entry{path: strings.TrimPrefix(line, "worktree ")}
+				continue
+			}
+			if strings.HasPrefix(line, "branch ") {
+				current.branch = strings.TrimPrefix(line, "branch ")
+			}
+		}
+		if current.path != "" {
+			entries = append(entries, current)
+		}
+		if defaultBranch != "" {
+			target := "refs/heads/" + defaultBranch
+			for _, e := range entries {
+				if e.branch == target {
+					return e.path
+				}
+			}
+		}
+		for _, e := range entries {
+			if filepath.Base(e.path) == repoName {
+				return e.path
+			}
+		}
+		for _, e := range entries {
+			if stat, err := os.Stat(filepath.Join(e.path, ".git")); err == nil && stat.IsDir() {
+				return e.path
+			}
+		}
+		if len(entries) > 0 {
+			return entries[0].path
+		}
+	}
+
+	if isBare {
+		return filepath.Join(filepath.Dir(repoRoot), repoName)
+	}
+	return repoRoot
+}
+
+func parseRemoteURL(remoteURL string) (repoInfo, bool) {
+	trimmed := strings.TrimSpace(remoteURL)
+	if trimmed == "" {
+		return repoInfo{}, false
+	}
+
+	if strings.Contains(trimmed, "://") {
+		parsed, err := url.Parse(trimmed)
+		if err != nil || parsed.Hostname() == "" {
+			return repoInfo{}, false
+		}
+		host := parsed.Hostname()
+		path := strings.Trim(parsed.Path, "/")
+		parts := strings.Split(path, "/")
+		if len(parts) < 2 {
+			return repoInfo{}, false
+		}
+		repo := strings.TrimSuffix(parts[len(parts)-1], ".git")
+		owner := strings.Join(parts[:len(parts)-1], "/")
+		return repoInfo{Host: host, Owner: owner, Name: repo}, true
+	}
+
+	if scpLike := strings.SplitN(trimmed, ":", 2); len(scpLike) == 2 {
+		hostPart := scpLike[0]
+		path := scpLike[1]
+		if atIdx := strings.LastIndex(hostPart, "@"); atIdx != -1 {
+			hostPart = hostPart[atIdx+1:]
+		}
+		host := hostPart
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) < 2 {
+			return repoInfo{}, false
+		}
+		repo := strings.TrimSuffix(parts[len(parts)-1], ".git")
+		owner := strings.Join(parts[:len(parts)-1], "/")
+		return repoInfo{Host: host, Owner: owner, Name: repo}, true
+	}
+
+	return repoInfo{}, false
 }
 
 type RemoteType int
@@ -162,24 +351,59 @@ func branchExists(branch string) bool {
 	return cmd.Run() == nil
 }
 
-func ensureWorktreePath(repo, branch string) (string, error) {
-	targetRoot := filepath.Join(worktreeRoot, repo)
-
-	info, err := os.Stat(targetRoot)
-	switch {
-	case err == nil:
-		if !info.IsDir() {
-			return "", fmt.Errorf("WORKTREE_ROOT path %s is not a directory", targetRoot)
-		}
-	case os.IsNotExist(err):
-		if err := os.MkdirAll(targetRoot, 0o755); err != nil {
-			return "", fmt.Errorf("failed to create WORKTREE_ROOT directory %s: %w", targetRoot, err)
-		}
-	default:
-		return "", fmt.Errorf("failed to access WORKTREE_ROOT directory %s: %w", targetRoot, err)
+func buildWorktreePath(info repoInfo, branch string) (string, error) {
+	pattern, err := resolveWorktreePattern()
+	if err != nil {
+		return "", err
 	}
 
-	return filepath.Join(targetRoot, branch), nil
+	context := map[string]any{
+		"repo":         info,
+		"branch":       branch,
+		"branchSafe":   strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(branch, "/", "-"), "\\", "-")),
+		"worktreeRoot": worktreeRoot,
+	}
+
+	if pattern == "" {
+		return "", fmt.Errorf("worktree pattern cannot be empty")
+	}
+
+	tpl, err := template.New("worktreePattern").
+		Delims("{", "}").
+		Option("missingkey=error").
+		Parse(pattern)
+	if err != nil {
+		return "", fmt.Errorf("invalid worktree pattern: %w", err)
+	}
+
+	var renderedBuf bytes.Buffer
+	if err := tpl.Execute(&renderedBuf, context); err != nil {
+		return "", fmt.Errorf("pattern variables missing values: %w", err)
+	}
+
+	rendered := renderedBuf.String()
+	rendered = filepath.FromSlash(rendered)
+	if !filepath.IsAbs(rendered) {
+		rendered = filepath.Join(worktreeRoot, rendered)
+	}
+
+	rendered = filepath.Clean(rendered)
+	parent := filepath.Dir(rendered)
+	infoStat, err := os.Stat(parent)
+	switch {
+	case err == nil:
+		if !infoStat.IsDir() {
+			return "", fmt.Errorf("worktree path %s is not a directory", parent)
+		}
+	case os.IsNotExist(err):
+		if err := os.MkdirAll(parent, 0o755); err != nil {
+			return "", fmt.Errorf("failed to create worktree directory %s: %w", parent, err)
+		}
+	default:
+		return "", fmt.Errorf("failed to access worktree directory %s: %w", parent, err)
+	}
+
+	return rendered, nil
 }
 
 func cleanupWorktreePath(worktreePath string) error {
@@ -209,6 +433,32 @@ func cleanupWorktreePath(worktreePath string) error {
 	}
 
 	return nil
+}
+
+func resolveWorktreePattern() (string, error) {
+	if worktreePattern != "" {
+		return worktreePattern, nil
+	}
+	if worktreeStrategy == "custom" {
+		return "", fmt.Errorf("WORKTREE_PATTERN is required when WORKTREE_STRATEGY is 'custom'")
+	}
+
+	switch worktreeStrategy {
+	case "global":
+		return "{.worktreeRoot}/{.repo.Name}/{.branch}", nil
+	case "sibling-repo", "sibling":
+		return "{.repo.Main}/../{.repo.Name}-{.branchSafe}", nil
+	case "parent-worktrees", "parent-centered":
+		return "{.repo.Main}/../{.repo.Name}.worktrees/{.branch}", nil
+	case "parent-branches", "repo-root":
+		return "{.repo.Main}/../{.branch}", nil
+	case "parent-dotdir", "local-root":
+		return "{.repo.Main}/../.worktrees/{.branch}", nil
+	case "inside-dotdir", "nested-local":
+		return "{.repo.Main}/.worktrees/{.branch}", nil
+	default:
+		return "", fmt.Errorf("unsupported WORKTREE_STRATEGY: %s", worktreeStrategy)
+	}
 }
 
 func isDirEmpty(path string) (bool, error) {
@@ -399,7 +649,7 @@ var checkoutCmd = &cobra.Command{
 		} else {
 			branch = args[0]
 		}
-		repo, err := getRepoName()
+		info, err := getRepoInfo()
 		if err != nil {
 			return err
 		}
@@ -416,7 +666,7 @@ var checkoutCmd = &cobra.Command{
 			return fmt.Errorf("branch '%s' does not exist\nUse 'wt create %s' to create a new branch", branch, branch)
 		}
 
-		path, err := ensureWorktreePath(repo, branch)
+		path, err := buildWorktreePath(info, branch)
 		if err != nil {
 			return err
 		}
@@ -446,7 +696,7 @@ var createCmd = &cobra.Command{
 			base = args[1]
 		}
 
-		repo, err := getRepoName()
+		info, err := getRepoInfo()
 		if err != nil {
 			return err
 		}
@@ -458,7 +708,7 @@ var createCmd = &cobra.Command{
 			return nil
 		}
 
-		path, err := ensureWorktreePath(repo, branch)
+		path, err := buildWorktreePath(info, branch)
 		if err != nil {
 			return err
 		}
@@ -646,7 +896,7 @@ func checkoutPROrMR(input string, remoteType RemoteType) error {
 		return fmt.Errorf("failed to look up branch for %s #%s: %w", strings.ToUpper(prefix), prNumber, err)
 	}
 
-	repo, err := getRepoName()
+	info, err := getRepoInfo()
 	if err != nil {
 		return err
 	}
@@ -658,7 +908,7 @@ func checkoutPROrMR(input string, remoteType RemoteType) error {
 		return nil
 	}
 
-	path, err := ensureWorktreePath(repo, branch)
+	path, err := buildWorktreePath(info, branch)
 	if err != nil {
 		return err
 	}
@@ -708,9 +958,11 @@ var listCmd = &cobra.Command{
 	},
 }
 
-var removeForce bool
-var cleanupDryRun bool
-var cleanupForce bool
+var (
+	removeForce   bool
+	cleanupDryRun bool
+	cleanupForce  bool
+)
 
 var removeCmd = &cobra.Command{
 	Use:     "remove [branch]",
@@ -917,6 +1169,38 @@ var pruneCmd = &cobra.Command{
 	},
 }
 
+var infoCmd = &cobra.Command{
+	Use:   "info",
+	Short: "Show worktree location configuration",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pattern, err := resolveWorktreePattern()
+		if err != nil {
+			pattern = worktreePattern
+			if pattern == "" {
+				pattern = "unknown"
+			}
+		}
+
+		fmt.Printf(`Strategy: %s
+Pattern:  %s
+Root:     %s
+
+Strategies:
+  global           -> {.worktreeRoot}/{.repo.Name}/{.branch}
+  sibling-repo     -> {.repo.Main}/../{.repo.Name}-{.branchSafe}
+  parent-branches  -> {.repo.Main}/../{.branch}
+  parent-worktrees -> {.repo.Main}/../{.repo.Name}.worktrees/{.branch}
+  parent-dotdir    -> {.repo.Main}/../.worktrees/{.branch}
+  inside-dotdir    -> {.repo.Main}/.worktrees/{.branch}
+  custom           -> requires WORKTREE_PATTERN
+
+Pattern variables: {.repo.Name}, {.repo.Main}, {.repo.Owner}, {.repo.Host}, {.branch}, {.branchSafe}, {.worktreeRoot}
+Note: {.branchSafe} is sanitized for filesystem paths (slashes replaced).
+`, worktreeStrategy, pattern, worktreeRoot)
+		return nil
+	},
+}
+
 var shellenvCmd = &cobra.Command{
 	Use:   "shellenv",
 	Short: "Output shell function for auto-cd (source this)",
@@ -961,7 +1245,7 @@ function wt {
 Register-ArgumentCompleter -CommandName wt -ScriptBlock {
     param($commandName, $wordToComplete, $commandAst, $fakeBoundParameters)
 
-    $commands = @('checkout', 'co', 'create', 'pr', 'mr', 'list', 'ls', 'remove', 'rm', 'cleanup', 'prune', 'help', 'shellenv', 'init', 'version')
+    $commands = @('checkout', 'co', 'create', 'pr', 'mr', 'list', 'ls', 'remove', 'rm', 'cleanup', 'prune', 'help', 'shellenv', 'init', 'info', 'version')
 
     # Get the position in the command line
     $position = $commandAst.CommandElements.Count - 1
@@ -1023,7 +1307,7 @@ if [ -n "$BASH_VERSION" ]; then
         COMPREPLY=()
         cur="${COMP_WORDS[COMP_CWORD]}"
         prev="${COMP_WORDS[COMP_CWORD-1]}"
-        commands="checkout co create pr mr list ls remove rm cleanup prune help shellenv init version"
+        commands="checkout co create pr mr list ls remove rm cleanup prune help shellenv init info version"
 
         # Complete commands if first argument
         if [ $COMP_CWORD -eq 1 ]; then
@@ -1063,6 +1347,7 @@ if [ -n "$ZSH_VERSION" ]; then
             'help:Show help'
             'shellenv:Output shell function for auto-cd'
             'init:Initialize shell integration'
+            'info:Show worktree location configuration'
             'version:Show version information'
         )
 
