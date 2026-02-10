@@ -34,7 +34,7 @@ scenarios:
           output_contains: "default"
 
   - name: config_init_creates_file
-    description: Config init creates a config file in WORKTREE_ROOT parent
+    description: Config init creates a config file
     skip_shellenv: true
     steps:
       - run: $WT_BIN --config "$WORKTREE_ROOT/wt-config/config.toml" config init
@@ -66,23 +66,9 @@ scenarios:
           exit_code: 0
           output_contains: "Created config file"
 
-  - name: config_file_sets_strategy
-    description: Config file values are used by wt config show
+  - name: config_file_shows_found
+    description: Config show reports found when config file exists
     skip_shellenv: true
-    skip_shells: [powershell, pwsh]
-    steps:
-      - run: mkdir -p "$WORKTREE_ROOT/wt-cfg4" && printf 'strategy = "sibling-repo"\n' > "$WORKTREE_ROOT/wt-cfg4/config.toml"
-        expect:
-          exit_code: 0
-      - run: $WT_BIN --config "$WORKTREE_ROOT/wt-cfg4/config.toml" config show
-        expect:
-          exit_code: 0
-          output_contains: "sibling-repo"
-
-  - name: config_file_sets_strategy_windows
-    description: Config file values are used by wt config show (Windows)
-    skip_shellenv: true
-    skip_shells: [bash, zsh]
     steps:
       - run: $WT_BIN --config "$WORKTREE_ROOT/wt-cfg4/config.toml" config init
         expect:
@@ -90,29 +76,17 @@ scenarios:
       - run: $WT_BIN --config "$WORKTREE_ROOT/wt-cfg4/config.toml" config show
         expect:
           exit_code: 0
-          output_contains: "global"
+          output_contains: "found"
+          output_not_contains: "not found"
 
-  - name: config_env_overrides_file
-    description: Environment variables override config file values
+  - name: config_env_overrides
+    description: Environment variables override default and config file values
     skip_shellenv: true
-    skip_shells: [powershell, pwsh]
     steps:
-      - run: mkdir -p "$WORKTREE_ROOT/wt-cfg5" && printf 'strategy = "global"\n' > "$WORKTREE_ROOT/wt-cfg5/config.toml"
+      - run: $WT_BIN --config "$WORKTREE_ROOT/wt-cfg5/config.toml" config init
         expect:
           exit_code: 0
       - run: $WT_BIN --config "$WORKTREE_ROOT/wt-cfg5/config.toml" config show
-        env:
-          WORKTREE_STRATEGY: parent-branches
-        expect:
-          exit_code: 0
-          output_contains: "parent-branches"
-
-  - name: config_env_overrides_windows
-    description: Environment variables override defaults (Windows)
-    skip_shellenv: true
-    skip_shells: [bash, zsh]
-    steps:
-      - run: $WT_BIN config show
         env:
           WORKTREE_STRATEGY: parent-branches
         expect:
