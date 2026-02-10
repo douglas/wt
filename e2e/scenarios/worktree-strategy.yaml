@@ -90,8 +90,9 @@ scenarios:
 
   - name: strategy_custom_pattern_missing_key
     description: Custom pattern fails when referencing missing keys
+    skip_shellenv: true  # Error path: no auto-cd needed, avoids Linux script(1) exit code issue
     steps:
-      - run: wt create feature-missing
+      - run: $WT_BIN create feature-missing
         env:
           WORKTREE_STRATEGY: custom
           WORKTREE_PATTERN: "{.missing}/{.branch}"
@@ -217,8 +218,9 @@ scenarios:
 
   - name: strategy_invalid_name
     description: Invalid strategy name fails with error
+    skip_shellenv: true  # Error path: no auto-cd needed, avoids Linux script(1) exit code issue
     steps:
-      - run: wt create foo
+      - run: $WT_BIN create foo
         env:
           WORKTREE_STRATEGY: bogus
         expect:
