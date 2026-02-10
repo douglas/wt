@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

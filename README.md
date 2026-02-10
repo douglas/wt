@@ -163,6 +163,11 @@ wt version
 # Show worktree location configuration
 wt info
 
+# Manage configuration file
+wt config init          # Create a default config file
+wt config show          # Show effective configuration with sources
+wt config path          # Print the config file path
+
 # Show help
 wt --help
 wt <command> --help
@@ -233,15 +238,56 @@ wt rm add-auth-feature
 
 ## Configuration
 
+### Configuration File
+
+`wt` supports an optional TOML configuration file. Use `wt config` commands to manage it:
+
+```bash
+wt config init          # Create a default config file
+wt config init --force  # Overwrite existing config file
+wt config show          # Show effective configuration with sources
+wt config path          # Print the config file path
+```
+
+**File location** (in order of priority):
+
+1. `--config` flag: `wt --config /path/to/config.toml <command>`
+2. `WT_CONFIG` environment variable
+3. Default: `~/.config/wt/config.toml` (respects `$XDG_CONFIG_HOME`; `%AppData%\wt\config.toml` on Windows)
+
+**Example config file** (`~/.config/wt/config.toml`):
+
+```toml
+# Root directory for worktrees (default: ~/dev/worktrees)
+root = "~/projects/worktrees"
+
+# Worktree placement strategy
+strategy = "sibling-repo"
+
+# Custom pattern (used when strategy = "custom", or to override any strategy's default)
+# pattern = "{.worktreeRoot}/{.repo.Name}/{.branch}"
+```
+
+### Precedence
+
+Configuration values are resolved in this order (highest priority first):
+
+1. **CLI flags** (`--config`)
+2. **Environment variables** (`WORKTREE_ROOT`, `WORKTREE_STRATEGY`, `WORKTREE_PATTERN`)
+3. **Config file** (`~/.config/wt/config.toml`)
+4. **Built-in defaults**
+
+Run `wt config show` to see the effective value and source of each setting.
+
 ### Worktree Location
 
 By default, worktrees are created at `~/dev/worktrees/<repo>/{.branch}` using the `global` strategy.
 
-Configure the location with these environment variables:
+Configure the location with environment variables or the config file:
 
-- `WORKTREE_ROOT` (default: `~/dev/worktrees`)
-- `WORKTREE_STRATEGY` (`global`, `sibling-repo`, `parent-branches`, `parent-worktrees`, `parent-dotdir`, `inside-dotdir`, `custom`)
-- `WORKTREE_PATTERN` (optional; overrides the default structure within the chosen strategy)
+- `WORKTREE_ROOT` / `root` (default: `~/dev/worktrees`)
+- `WORKTREE_STRATEGY` / `strategy` (`global`, `sibling-repo`, `parent-branches`, `parent-worktrees`, `parent-dotdir`, `inside-dotdir`, `custom`)
+- `WORKTREE_PATTERN` / `pattern` (optional; overrides the default structure within the chosen strategy)
 
 Available pattern variables:
 
@@ -265,7 +311,7 @@ Default patterns per strategy:
 | `inside-dotdir` | branches under `.worktrees/` inside main | `{.repo.Main}/.worktrees/{.branch}` |
 | `custom` | user-defined pattern | `WORKTREE_PATTERN` |
 
-Customize the location by setting the environment variables:
+Customize the location via environment variables:
 
 ```bash
 export WORKTREE_ROOT="$HOME/projects/worktrees"
@@ -273,9 +319,15 @@ export WORKTREE_STRATEGY="sibling-repo"
 export WORKTREE_PATTERN="{.repo.Main}/../{.repo.Name}/{.branch}"
 ```
 
-Run `wt info` to see the active strategy, pattern, and available variables.
+Or via config file:
 
-Add this to your `~/.bashrc` or `~/.zshrc` to make it permanent.
+```toml
+root = "~/projects/worktrees"
+strategy = "sibling-repo"
+pattern = "{.repo.Main}/../{.repo.Name}/{.branch}"
+```
+
+Run `wt info` to see the active strategy, pattern, and available variables.
 
 ## Development
 
