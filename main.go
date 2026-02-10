@@ -145,18 +145,20 @@ func getRepoInfo() (repoInfo, error) {
 		repoRoot = strings.TrimSpace(string(output))
 	}
 	repoName := ""
+	remoteURL := ""
 	cmd = exec.Command("git", "remote", "get-url", "origin")
 	output, err = cmd.Output()
 	if err == nil {
-		if parsed, ok := parseRemoteURL(strings.TrimSpace(string(output))); ok {
+		remoteURL = strings.TrimSpace(string(output))
+		if parsed, ok := parseRemoteURL(remoteURL); ok {
 			repoName = parsed.Name
 		}
 	}
 	if repoName == "" {
 		repoName = strings.TrimSuffix(filepath.Base(repoRoot), ".git")
-		if cmd := exec.Command("git", "rev-parse", "--git-common-dir"); cmd != nil {
-			if output, err = cmd.Output(); err == nil {
-				commonDir := strings.TrimSpace(string(output))
+		if commonCmd := exec.Command("git", "rev-parse", "--git-common-dir"); commonCmd != nil {
+			if commonOutput, commonErr := commonCmd.Output(); commonErr == nil {
+				commonDir := strings.TrimSpace(string(commonOutput))
 				if commonDir != "" {
 					if !filepath.IsAbs(commonDir) {
 						commonDir = filepath.Join(repoRoot, commonDir)
@@ -177,8 +179,8 @@ func getRepoInfo() (repoInfo, error) {
 		Name: repoName,
 	}
 
-	if err == nil {
-		if parsed, ok := parseRemoteURL(strings.TrimSpace(string(output))); ok {
+	if remoteURL != "" {
+		if parsed, ok := parseRemoteURL(remoteURL); ok {
 			info.Host = parsed.Host
 			info.Owner = parsed.Owner
 		}
@@ -1243,7 +1245,7 @@ function wt {
 Register-ArgumentCompleter -CommandName wt -ScriptBlock {
     param($commandName, $wordToComplete, $commandAst, $fakeBoundParameters)
 
-    $commands = @('checkout', 'co', 'create', 'pr', 'mr', 'list', 'ls', 'remove', 'rm', 'cleanup', 'prune', 'help', 'shellenv', 'init', 'version')
+    $commands = @('checkout', 'co', 'create', 'pr', 'mr', 'list', 'ls', 'remove', 'rm', 'cleanup', 'prune', 'help', 'shellenv', 'init', 'info', 'version')
 
     # Get the position in the command line
     $position = $commandAst.CommandElements.Count - 1
@@ -1305,7 +1307,7 @@ if [ -n "$BASH_VERSION" ]; then
         COMPREPLY=()
         cur="${COMP_WORDS[COMP_CWORD]}"
         prev="${COMP_WORDS[COMP_CWORD-1]}"
-        commands="checkout co create pr mr list ls remove rm cleanup prune help shellenv init version"
+        commands="checkout co create pr mr list ls remove rm cleanup prune help shellenv init info version"
 
         # Complete commands if first argument
         if [ $COMP_CWORD -eq 1 ]; then
@@ -1345,6 +1347,7 @@ if [ -n "$ZSH_VERSION" ]; then
             'help:Show help'
             'shellenv:Output shell function for auto-cd'
             'init:Initialize shell integration'
+            'info:Show worktree location configuration'
             'version:Show version information'
         )
 

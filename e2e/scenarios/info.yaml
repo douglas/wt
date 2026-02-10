@@ -1,0 +1,25 @@
+# E2E tests for `wt info` command
+name: info
+description: Test worktree info output
+
+scenarios:
+  - name: info_shows_strategy
+    description: Info shows default strategy and pattern variables
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN info
+        expect:
+          exit_code: 0
+          output_contains: "Strategy: global"
+      - run: $WT_BIN info
+        expect:
+          output_contains: "Pattern variables:"
+
+  - name: info_shows_custom_strategy
+    description: Info reflects custom strategy from environment
+    skip_shellenv: true
+    steps:
+      - run: WORKTREE_STRATEGY=sibling-repo $WT_BIN info
+        expect:
+          exit_code: 0
+          output_contains: "Strategy: sibling-repo"

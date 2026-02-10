@@ -379,6 +379,73 @@ func TestParseRemoteURL(t *testing.T) {
 	}
 }
 
+func TestParseRemoteURLNegative(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "Empty string", input: ""},
+		{name: "Whitespace only", input: "   "},
+		{name: "HTTPS no path", input: "https://github.com"},
+		{name: "HTTPS single component", input: "https://github.com/user"},
+		{name: "HTTPS trailing slash only", input: "https://github.com/"},
+		{name: "SCP single component", input: "git@github.com:repo.git"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, ok := parseRemoteURL(tt.input)
+			if ok {
+				t.Errorf("parseRemoteURL(%q) returned ok=true, want ok=false", tt.input)
+			}
+		})
+	}
+}
+
+func TestParseRemoteURLWithoutGitSuffix(t *testing.T) {
+	// URLs without .git suffix should still parse correctly
+	tests := []struct {
+		name      string
+		input     string
+		wantHost  string
+		wantOwner string
+		wantName  string
+	}{
+		{
+			name:      "HTTPS without .git",
+			input:     "https://github.com/acme/test-repo",
+			wantHost:  "github.com",
+			wantOwner: "acme",
+			wantName:  "test-repo",
+		},
+		{
+			name:      "SCP without .git",
+			input:     "git@github.com:acme/test-repo",
+			wantHost:  "github.com",
+			wantOwner: "acme",
+			wantName:  "test-repo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := parseRemoteURL(tt.input)
+			if !ok {
+				t.Fatalf("parseRemoteURL(%q) returned ok=false", tt.input)
+			}
+			if got.Host != tt.wantHost {
+				t.Errorf("parseRemoteURL(%q) host = %q, want %q", tt.input, got.Host, tt.wantHost)
+			}
+			if got.Owner != tt.wantOwner {
+				t.Errorf("parseRemoteURL(%q) owner = %q, want %q", tt.input, got.Owner, tt.wantOwner)
+			}
+			if got.Name != tt.wantName {
+				t.Errorf("parseRemoteURL(%q) name = %q, want %q", tt.input, got.Name, tt.wantName)
+			}
+		})
+	}
+}
+
 func TestExtractRepoNameFromURL(t *testing.T) {
 	tests := []struct {
 		name string

@@ -144,3 +144,38 @@ scenarios:
       - run: pwd
         expect:
           cwd_ends_with: /worktrees/custom/test-repo/feature-next
+
+  - name: checkout_sibling_strategy
+    description: Checkout works with non-global (sibling-repo) strategy
+    setup:
+      - create_branch: checkout-sibling-branch
+    steps:
+      - run: WORKTREE_STRATEGY=sibling-repo wt checkout checkout-sibling-branch
+        expect:
+          exit_code: 0
+      - run: pwd
+        expect:
+          cwd_ends_with: /test-repo-checkout-sibling-branch
+
+  - name: remove_sibling_strategy
+    description: Remove works with non-global (sibling-repo) strategy
+    setup:
+      - create_branch: remove-sibling-branch
+    steps:
+      - run: WORKTREE_STRATEGY=sibling-repo wt checkout remove-sibling-branch
+        expect:
+          exit_code: 0
+      - cd: $REPO_DIR
+      - run: wt remove remove-sibling-branch
+        expect:
+          exit_code: 0
+      - run: wt list
+        expect:
+          output_not_contains: remove-sibling-branch
+
+  - name: strategy_invalid_name
+    description: Invalid strategy name fails with error
+    steps:
+      - run: WORKTREE_STRATEGY=bogus wt create foo
+        expect:
+          exit_code: 1

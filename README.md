@@ -12,7 +12,7 @@ Inspired by [haacked/dotfiles/tree-me](https://github.com/haacked/dotfiles/blob/
 
 ## Features
 
-- Organized worktree structure: `~/dev/worktrees/<repo>/{.branch}`
+- Configurable worktree strategies: `global`, `sibling-repo`, `parent-branches`, and more
 - Simple commands for common worktree operations
 - **Interactive selection menus** for checkout, remove, pr, and mr commands
 - GitHub PR support via `wt pr` command (uses `gh` CLI) — checks out the PR's actual branch name
@@ -160,6 +160,9 @@ wt shellenv
 # Show version
 wt version
 
+# Show worktree location configuration
+wt info
+
 # Show help
 wt --help
 wt <command> --help
@@ -269,6 +272,8 @@ export WORKTREE_ROOT="$HOME/projects/worktrees"
 export WORKTREE_STRATEGY="sibling-repo"
 export WORKTREE_PATTERN="{.repo.Main}/../{.repo.Name}/{.branch}"
 ```
+
+Run `wt info` to see the active strategy, pattern, and available variables.
 
 Add this to your `~/.bashrc` or `~/.zshrc` to make it permanent.
 
