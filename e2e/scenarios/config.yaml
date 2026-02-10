@@ -45,6 +45,7 @@ scenarios:
   - name: config_init_fails_if_exists
     description: Config init fails if file already exists
     skip_shellenv: true
+    skip_shells: [powershell]
     steps:
       - run: $WT_BIN --config "$WORKTREE_ROOT/wt-config2/config.toml" config init
         expect:
