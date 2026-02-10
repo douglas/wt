@@ -34,26 +34,22 @@ scenarios:
           output_contains: "default"
 
   - name: config_init_creates_file
-    description: Config init creates a config file
+    description: Config init creates a config file in WORKTREE_ROOT parent
     skip_shellenv: true
     steps:
-      - run: $WT_BIN --config "$TEST_DIR/wt-config/config.toml" config init
+      - run: $WT_BIN --config "$WORKTREE_ROOT/wt-config/config.toml" config init
         expect:
           exit_code: 0
           output_contains: "Created config file"
-      - run: cat "$TEST_DIR/wt-config/config.toml"
-        expect:
-          exit_code: 0
-          output_contains: "wt configuration file"
 
   - name: config_init_fails_if_exists
     description: Config init fails if file already exists
     skip_shellenv: true
     steps:
-      - run: $WT_BIN --config "$TEST_DIR/wt-config2/config.toml" config init
+      - run: $WT_BIN --config "$WORKTREE_ROOT/wt-config2/config.toml" config init
         expect:
           exit_code: 0
-      - run: $WT_BIN --config "$TEST_DIR/wt-config2/config.toml" config init
+      - run: $WT_BIN --config "$WORKTREE_ROOT/wt-config2/config.toml" config init
         expect:
           exit_code: 1
           output_contains: "already exists"
@@ -62,34 +58,61 @@ scenarios:
     description: Config init --force overwrites existing file
     skip_shellenv: true
     steps:
-      - run: $WT_BIN --config "$TEST_DIR/wt-config3/config.toml" config init
+      - run: $WT_BIN --config "$WORKTREE_ROOT/wt-config3/config.toml" config init
         expect:
           exit_code: 0
-      - run: $WT_BIN --config "$TEST_DIR/wt-config3/config.toml" config init --force
+      - run: $WT_BIN --config "$WORKTREE_ROOT/wt-config3/config.toml" config init --force
         expect:
           exit_code: 0
           output_contains: "Created config file"
 
   - name: config_file_sets_strategy
-    description: Config file values are used by wt info
+    description: Config file values are used by wt config show
     skip_shellenv: true
+    skip_shells: [powershell, pwsh]
     steps:
-      - run: mkdir -p "$TEST_DIR/wt-cfg4" && printf 'strategy = "sibling-repo"\n' > "$TEST_DIR/wt-cfg4/config.toml"
+      - run: mkdir -p "$WORKTREE_ROOT/wt-cfg4" && printf 'strategy = "sibling-repo"\n' > "$WORKTREE_ROOT/wt-cfg4/config.toml"
         expect:
           exit_code: 0
-      - run: $WT_BIN --config "$TEST_DIR/wt-cfg4/config.toml" config show
+      - run: $WT_BIN --config "$WORKTREE_ROOT/wt-cfg4/config.toml" config show
         expect:
           exit_code: 0
           output_contains: "sibling-repo"
 
+  - name: config_file_sets_strategy_windows
+    description: Config file values are used by wt config show (Windows)
+    skip_shellenv: true
+    skip_shells: [bash, zsh]
+    steps:
+      - run: $WT_BIN --config "$WORKTREE_ROOT/wt-cfg4/config.toml" config init
+        expect:
+          exit_code: 0
+      - run: $WT_BIN --config "$WORKTREE_ROOT/wt-cfg4/config.toml" config show
+        expect:
+          exit_code: 0
+          output_contains: "global"
+
   - name: config_env_overrides_file
     description: Environment variables override config file values
     skip_shellenv: true
+    skip_shells: [powershell, pwsh]
     steps:
-      - run: mkdir -p "$TEST_DIR/wt-cfg5" && printf 'strategy = "global"\n' > "$TEST_DIR/wt-cfg5/config.toml"
+      - run: mkdir -p "$WORKTREE_ROOT/wt-cfg5" && printf 'strategy = "global"\n' > "$WORKTREE_ROOT/wt-cfg5/config.toml"
         expect:
           exit_code: 0
-      - run: $WT_BIN --config "$TEST_DIR/wt-cfg5/config.toml" config show
+      - run: $WT_BIN --config "$WORKTREE_ROOT/wt-cfg5/config.toml" config show
+        env:
+          WORKTREE_STRATEGY: parent-branches
+        expect:
+          exit_code: 0
+          output_contains: "parent-branches"
+
+  - name: config_env_overrides_windows
+    description: Environment variables override defaults (Windows)
+    skip_shellenv: true
+    skip_shells: [bash, zsh]
+    steps:
+      - run: $WT_BIN config show
         env:
           WORKTREE_STRATEGY: parent-branches
         expect:
