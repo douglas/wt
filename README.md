@@ -329,6 +329,35 @@ pattern = "{.repo.Main}/../{.repo.Name}/{.branch}"
 
 Run `wt info` to see the active strategy, pattern, and available variables.
 
+### Example: Task spanning multiple repositories
+
+When a task or story requires changes across multiple repositories (e.g. a shared library and a main application), you can organize worktrees by feature instead of by repo using a custom pattern:
+
+```toml
+# ~/.config/wt/config.toml
+strategy = "custom"
+pattern = "{.worktreeRoot}/{.branch}/{.repo.Name}"
+```
+
+Use the same branch name in each repository:
+
+```bash
+cd ~/src/shared-lib
+wt create feat/PROJ-123
+
+cd ~/src/main-app
+wt create feat/PROJ-123
+```
+
+This groups all repositories for a task together:
+
+```
+~/dev/worktrees/
+  feat/PROJ-123/
+    shared-lib/
+    main-app/
+```
+
 ## Development
 
 The project includes a `justfile` for common build tasks. Install [just](https://github.com/casey/just) to use it.
