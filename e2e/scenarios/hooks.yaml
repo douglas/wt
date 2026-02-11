@@ -1,0 +1,98 @@
+# E2E tests for pre/post command hooks
+name: hooks
+description: Test pre/post command hook functionality
+
+scenarios:
+  - name: post_create_hook_runs
+    description: Post-create hook executes after worktree creation
+    skip_os: [windows]
+    skip_shellenv: true
+    steps:
+      # Write a config file with a post_create hook, then create worktree
+      - run: mkdir -p "$TEST_DIR/config" && printf '[hooks]\npost_create = ["touch $WT_PATH/.hook-ran"]\n' > "$TEST_DIR/config/config.toml" && WT_CONFIG="$TEST_DIR/config/config.toml" $WT_BIN create hook-test
+        expect:
+          exit_code: 0
+      - run: test -f "$WORKTREE_ROOT/test-repo/hook-test/.hook-ran" && echo "HOOK_RAN" || echo "HOOK_MISSING"
+        expect:
+          output_contains: "HOOK_RAN"
+
+  - name: pre_create_hook_aborts
+    description: Pre-create hook failure prevents worktree creation
+    skip_shellenv: true
+    skip_os: [windows]
+    steps:
+      - run: mkdir -p "$TEST_DIR/config" && printf '[hooks]\npre_create = ["false"]\n' > "$TEST_DIR/config/config.toml" && WT_CONFIG="$TEST_DIR/config/config.toml" $WT_BIN create blocked-branch
+        expect:
+          exit_code: 1
+      - run: $WT_BIN list
+        expect:
+          output_not_contains: "blocked-branch"
+
+  - name: hooks_disabled_env
+    description: WT_HOOKS_DISABLED=1 skips all hooks
+    skip_os: [windows]
+    skip_shellenv: true
+    steps:
+      - run: mkdir -p "$TEST_DIR/config" && printf '[hooks]\npre_create = ["false"]\n' > "$TEST_DIR/config/config.toml" && WT_CONFIG="$TEST_DIR/config/config.toml" WT_HOOKS_DISABLED=1 $WT_BIN create should-succeed
+        expect:
+          exit_code: 0
+
+  - name: post_checkout_hook_runs
+    description: Post-checkout hook executes after worktree checkout
+    skip_os: [windows]
+    skip_shellenv: true
+    setup:
+      - create_branch: hook-co-branch
+    steps:
+      - run: mkdir -p "$TEST_DIR/config" && printf '[hooks]\npost_checkout = ["touch $WT_PATH/.checkout-hook-ran"]\n' > "$TEST_DIR/config/config.toml" && WT_CONFIG="$TEST_DIR/config/config.toml" $WT_BIN checkout hook-co-branch
+        expect:
+          exit_code: 0
+      - run: test -f "$WORKTREE_ROOT/test-repo/hook-co-branch/.checkout-hook-ran" && echo "HOOK_RAN" || echo "HOOK_MISSING"
+        expect:
+          output_contains: "HOOK_RAN"
+
+  - name: pre_remove_hook_runs
+    description: Pre-remove hook executes before worktree removal
+    skip_os: [windows]
+    skip_shellenv: true
+    setup:
+      - create_branch: rm-hook-branch
+    steps:
+      - run: $WT_BIN checkout rm-hook-branch
+        expect:
+          exit_code: 0
+      - cd: $REPO_DIR
+      - run: mkdir -p "$TEST_DIR/config" && printf '[hooks]\npre_remove = ["echo HOOK_PRE_REMOVE"]\n' > "$TEST_DIR/config/config.toml" && WT_CONFIG="$TEST_DIR/config/config.toml" $WT_BIN remove rm-hook-branch
+        expect:
+          exit_code: 0
+          output_contains: "HOOK_PRE_REMOVE"
+
+  - name: copy_env_file_when_exists
+    description: Post-create hook copies .env from main to worktree when it exists
+    skip_os: [windows]
+    skip_shellenv: true
+    setup:
+      - create_file:
+          path: .env
+          content: "SECRET_KEY=abc123"
+      - git_add: .env
+      - git_commit: "add .env file"
+    steps:
+      - run: mkdir -p "$TEST_DIR/config" && printf '[hooks]\npost_create = ["test -f $WT_MAIN/.env && cp $WT_MAIN/.env $WT_PATH/.env || true"]\n' > "$TEST_DIR/config/config.toml" && WT_CONFIG="$TEST_DIR/config/config.toml" $WT_BIN create env-branch
+        expect:
+          exit_code: 0
+      - run: cat "$WORKTREE_ROOT/test-repo/env-branch/.env"
+        expect:
+          output_contains: "SECRET_KEY=abc123"
+
+  - name: copy_env_file_skipped_when_missing
+    description: Post-create hook silently skips when .env does not exist in main
+    skip_os: [windows]
+    skip_shellenv: true
+    steps:
+      - run: mkdir -p "$TEST_DIR/config" && printf '[hooks]\npost_create = ["test -f $WT_MAIN/.env && cp $WT_MAIN/.env $WT_PATH/.env || true"]\n' > "$TEST_DIR/config/config.toml" && WT_CONFIG="$TEST_DIR/config/config.toml" $WT_BIN create no-env-branch
+        expect:
+          exit_code: 0
+      - run: test -f "$WORKTREE_ROOT/test-repo/no-env-branch/.env" && echo "ENV_EXISTS" || echo "ENV_MISSING"
+        expect:
+          output_contains: "ENV_MISSING"
