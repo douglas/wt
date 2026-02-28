@@ -27,6 +27,12 @@ type ptyShell struct {
 	t         *testing.T
 }
 
+var (
+	builtWtBinaryOnce sync.Once
+	builtWtBinaryPath string
+	builtWtBinaryErr  error
+)
+
 // getInitWaitTime returns appropriate wait time for shell initialization
 // Longer in CI due to race detector and slower environments
 func getInitWaitTime() time.Duration {
@@ -211,13 +217,6 @@ func (ps *ptyShell) waitForText(ctx context.Context, text string) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	ps.outputMux.Lock()
-	initialLen := ps.output.Len()
-	ps.outputMux.Unlock()
-
-	lastLen := initialLen
-	stableCount := 0
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -229,26 +228,12 @@ func (ps *ptyShell) waitForText(ctx context.Context, text string) error {
 		case <-ticker.C:
 			ps.outputMux.Lock()
 			output := ps.output.String()
-			currentLen := ps.output.Len()
 			ps.outputMux.Unlock()
 
 			// Check if we found the text
 			if strings.Contains(output, text) {
 				return nil
 			}
-
-			// Check if output has stabilized (no new data)
-			if currentLen == lastLen {
-				stableCount++
-				// If output hasn't changed for 1 second (10 ticks), we're likely stuck
-				if stableCount >= 10 {
-					return fmt.Errorf("output stabilized without finding text '%s'\nGot output:\n%s",
-						text, output)
-				}
-			} else {
-				stableCount = 0
-			}
-			lastLen = currentLen
 		}
 	}
 }
@@ -298,8 +283,8 @@ func (ps *ptyShell) resetOutput() {
 	ps.output.Reset()
 }
 
-// TestInteractiveCheckoutWithoutArgs demonstrates the hang when running 'wt co'
-// without providing a branch name. This test should FAIL until the bug is fixed.
+// TestInteractiveCheckoutWithoutArgs verifies interactive checkout prompt works in zsh
+// when running 'wt co' without a branch argument.
 func TestInteractiveCheckoutWithoutArgs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping interactive e2e test in short mode")
@@ -366,22 +351,14 @@ echo "Built wt binary: %s"
 		t.Fatalf("Failed to send command: %v", err)
 	}
 
-	// Try to wait for the branch selection prompt to appear
-	// This demonstrates the hang - we expect to see the prompt but it never appears
+	// Wait for the branch selection prompt to appear
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel2()
 
 	err = ps.waitForText(ctx2, "Select branch to checkout")
 	if err != nil {
-		// This is the EXPECTED behavior with the bug - the prompt never appears
-		t.Logf("BUG CONFIRMED: Interactive prompt did not appear within timeout")
-		t.Logf("Output captured:\n%s", ps.getOutput())
-		t.Fatalf("Interactive checkout hung: %v", err)
+		t.Fatalf("Interactive checkout prompt did not appear: %v\nOutput:\n%s", err, ps.getOutput())
 	}
-
-	// If we reach here, the bug is fixed!
-	t.Log("SUCCESS: Interactive prompt appeared!")
-	t.Log("The bug appears to be fixed.")
 
 	// Cancel the prompt and exit cleanly
 	ps.send("\x03") // Ctrl-C to cancel the prompt
@@ -473,8 +450,81 @@ echo "Built wt binary: %s"
 	t.Log("SUCCESS: Non-interactive checkout with explicit branch name works correctly")
 }
 
-// TestInteractiveCheckoutWithoutArgsBash demonstrates the v0.1.12 hang bug when running 'wt co'
-// without providing a branch name in bash. This test should PASS after the fix.
+// TestZshTabCompletionWithShellenvLast verifies positive zsh tab completion behavior
+// when shellenv is sourced after other completion initialization.
+func TestZshTabCompletionWithShellenvLast(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping interactive e2e test in short mode")
+	}
+
+	if _, err := exec.LookPath("zsh"); err != nil {
+		t.Skip("zsh not available, skipping zsh interactive test")
+	}
+
+	tmpDir := t.TempDir()
+	repoDir := filepath.Join(tmpDir, "test-repo")
+	worktreeRoot := filepath.Join(tmpDir, "worktrees")
+
+	setupTestRepo(t, repoDir)
+	wtBinary := buildWtBinary(t, tmpDir)
+
+	branch := "AIG-zsh-completion-branch"
+	existingPath := filepath.Join(tmpDir, "existing-zsh-completion-worktree")
+	runGitCommand(t, repoDir, "worktree", "add", "-b", branch, existingPath, "main")
+
+	rcContent := fmt.Sprintf(`
+export WORKTREE_ROOT=%s
+export PATH=%s:$PATH
+cd %s
+autoload -Uz compinit
+compinit
+eval "$(printf 'autoload -Uz compinit\ncompinit\n')"
+source <(%s shellenv)
+echo "=== WT SHELLENV LOADED ==="
+`, worktreeRoot, filepath.Dir(wtBinary), repoDir, wtBinary)
+
+	ps, err := newPtyZsh(t, rcContent)
+	if err != nil {
+		t.Fatalf("Failed to create pty zsh: %v", err)
+	}
+	defer ps.close()
+
+	time.Sleep(getInitWaitTime())
+	ctx, cancel := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel()
+	if err := ps.waitForText(ctx, "=== WT SHELLENV LOADED ==="); err != nil {
+		t.Fatalf("Failed to load shellenv: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+
+	ps.resetOutput()
+	if err := ps.send("echo _COMPS_WT=${_comps[wt]-unset}\n"); err != nil {
+		t.Fatalf("Failed to send _comps check command: %v", err)
+	}
+
+	ctxComps, cancelComps := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancelComps()
+	if err := ps.waitForText(ctxComps, "_COMPS_WT=_wt_complete_zsh"); err != nil {
+		t.Fatalf("wt completion mapping missing after shell init: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+
+	ps.resetOutput()
+	if err := ps.send("wt co AIG\t\n"); err != nil {
+		t.Fatalf("Failed to send completion command: %v", err)
+	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel2()
+	if err := ps.waitForText(ctx2, "Worktree already exists:"); err != nil {
+		t.Fatalf("zsh tab completion checkout failed: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+
+	if !strings.Contains(ps.getOutput(), branch) {
+		t.Fatalf("expected completed branch name %q in output, got:\n%s", branch, ps.getOutput())
+	}
+}
+
+// TestInteractiveCheckoutWithoutArgsBash verifies interactive checkout prompt works in bash
+// when running 'wt co' without a branch argument.
 func TestInteractiveCheckoutWithoutArgsBash(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping interactive e2e test in short mode")
@@ -541,21 +591,14 @@ echo "Built wt binary: %s"
 		t.Fatalf("Failed to send command: %v", err)
 	}
 
-	// Try to wait for the branch selection prompt to appear
+	// Wait for the branch selection prompt to appear
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel2()
 
 	err = ps.waitForText(ctx2, "Select branch to checkout")
 	if err != nil {
-		// This is the EXPECTED behavior with the bug - the prompt never appears
-		t.Logf("BUG CONFIRMED: Interactive prompt did not appear within timeout")
-		t.Logf("Output captured:\n%s", ps.getOutput())
-		t.Fatalf("Interactive checkout hung: %v", err)
+		t.Fatalf("Interactive checkout prompt did not appear: %v\nOutput:\n%s", err, ps.getOutput())
 	}
-
-	// If we reach here, the bug is fixed!
-	t.Log("SUCCESS: Interactive prompt appeared!")
-	t.Log("The bug appears to be fixed.")
 
 	// Cancel the prompt and exit cleanly
 	ps.send("\x03") // Ctrl-C to cancel the prompt
@@ -647,8 +690,281 @@ echo "Built wt binary: %s"
 	t.Log("SUCCESS: Non-interactive checkout with explicit branch name works correctly")
 }
 
-// TestInteractiveCheckoutWithoutArgsPowerShell demonstrates the interactive 'wt co'
-// prompt in PowerShell. Tests that interactive prompts work correctly.
+// TestBashTabCompletionForCheckoutBranch verifies positive bash tab completion
+// for checkout branch names from existing worktrees.
+func TestBashTabCompletionForCheckoutBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping interactive e2e test in short mode")
+	}
+
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available, skipping bash interactive test")
+	}
+
+	tmpDir := t.TempDir()
+	repoDir := filepath.Join(tmpDir, "test-repo")
+	worktreeRoot := filepath.Join(tmpDir, "worktrees")
+
+	setupTestRepo(t, repoDir)
+	wtBinary := buildWtBinary(t, tmpDir)
+
+	branch := "AIG-bash-completion-branch"
+	existingPath := filepath.Join(tmpDir, "existing-bash-completion-worktree")
+	runGitCommand(t, repoDir, "worktree", "add", "-b", branch, existingPath, "main")
+
+	rcContent := fmt.Sprintf(`
+export WORKTREE_ROOT=%s
+export PATH=%s:$PATH
+cd %s
+source <(%s shellenv)
+echo "=== WT SHELLENV LOADED ==="
+`, worktreeRoot, filepath.Dir(wtBinary), repoDir, wtBinary)
+
+	ps, err := newPtyBash(t, rcContent)
+	if err != nil {
+		t.Fatalf("Failed to create pty bash: %v", err)
+	}
+	defer ps.close()
+
+	time.Sleep(getInitWaitTime())
+	ctx, cancel := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel()
+	if err := ps.waitForText(ctx, "=== WT SHELLENV LOADED ==="); err != nil {
+		t.Fatalf("Failed to load shellenv: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+
+	ps.resetOutput()
+	if err := ps.send("wt co AIG\t\n"); err != nil {
+		t.Fatalf("Failed to send completion command: %v", err)
+	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel2()
+	if err := ps.waitForText(ctx2, "Worktree already exists:"); err != nil {
+		t.Fatalf("bash tab completion checkout failed: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+
+	if !strings.Contains(ps.getOutput(), branch) {
+		t.Fatalf("expected completed branch name %q in output, got:\n%s", branch, ps.getOutput())
+	}
+}
+
+// TestZshTabCompletionForCommands verifies zsh command completion expands
+// subcommands (e.g., "ve" -> "version") and executes the completed command.
+func TestZshTabCompletionForCommands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping interactive e2e test in short mode")
+	}
+
+	if _, err := exec.LookPath("zsh"); err != nil {
+		t.Skip("zsh not available, skipping zsh interactive test")
+	}
+
+	tmpDir := t.TempDir()
+	repoDir := filepath.Join(tmpDir, "test-repo")
+	worktreeRoot := filepath.Join(tmpDir, "worktrees")
+
+	setupTestRepo(t, repoDir)
+	wtBinary := buildWtBinary(t, tmpDir)
+
+	rcContent := fmt.Sprintf(`
+export WORKTREE_ROOT=%s
+export PATH=%s:$PATH
+cd %s
+autoload -Uz compinit
+compinit
+source <(%s shellenv)
+echo "=== WT SHELLENV LOADED ==="
+`, worktreeRoot, filepath.Dir(wtBinary), repoDir, wtBinary)
+
+	ps, err := newPtyZsh(t, rcContent)
+	if err != nil {
+		t.Fatalf("Failed to create pty zsh: %v", err)
+	}
+	defer ps.close()
+
+	time.Sleep(getInitWaitTime())
+	ctx, cancel := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel()
+	if err := ps.waitForText(ctx, "=== WT SHELLENV LOADED ==="); err != nil {
+		t.Fatalf("Failed to load shellenv: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+
+	ps.resetOutput()
+	if err := ps.send("wt ve\t\n"); err != nil {
+		t.Fatalf("Failed to send command completion input: %v", err)
+	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel2()
+	if err := ps.waitForText(ctx2, "wt version "); err != nil {
+		t.Fatalf("zsh command completion did not execute 'wt version': %v\nOutput:\n%s", err, ps.getOutput())
+	}
+	if strings.Contains(ps.getOutput(), "unknown command") {
+		t.Fatalf("zsh command completion executed an unexpected command:\n%s", ps.getOutput())
+	}
+}
+
+// TestBashTabCompletionForCommands verifies bash command completion expands
+// subcommands (e.g., "ve" -> "version") and executes the completed command.
+func TestBashTabCompletionForCommands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping interactive e2e test in short mode")
+	}
+
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available, skipping bash interactive test")
+	}
+
+	tmpDir := t.TempDir()
+	repoDir := filepath.Join(tmpDir, "test-repo")
+	worktreeRoot := filepath.Join(tmpDir, "worktrees")
+
+	setupTestRepo(t, repoDir)
+	wtBinary := buildWtBinary(t, tmpDir)
+
+	rcContent := fmt.Sprintf(`
+export WORKTREE_ROOT=%s
+export PATH=%s:$PATH
+cd %s
+source <(%s shellenv)
+echo "=== WT SHELLENV LOADED ==="
+`, worktreeRoot, filepath.Dir(wtBinary), repoDir, wtBinary)
+
+	ps, err := newPtyBash(t, rcContent)
+	if err != nil {
+		t.Fatalf("Failed to create pty bash: %v", err)
+	}
+	defer ps.close()
+
+	time.Sleep(getInitWaitTime())
+	ctx, cancel := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel()
+	if err := ps.waitForText(ctx, "=== WT SHELLENV LOADED ==="); err != nil {
+		t.Fatalf("Failed to load shellenv: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+
+	ps.resetOutput()
+	if err := ps.send("wt ve\t\n"); err != nil {
+		t.Fatalf("Failed to send command completion input: %v", err)
+	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel2()
+	if err := ps.waitForText(ctx2, "wt version "); err != nil {
+		t.Fatalf("bash command completion did not execute 'wt version': %v\nOutput:\n%s", err, ps.getOutput())
+	}
+	if strings.Contains(ps.getOutput(), "unknown command") {
+		t.Fatalf("bash command completion executed an unexpected command:\n%s", ps.getOutput())
+	}
+}
+
+// TestZshTabCompletionForConfigSubcommands verifies zsh completes config subcommands
+// (e.g., "wt config pa<Tab>" -> "wt config path").
+func TestZshTabCompletionForConfigSubcommands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping interactive e2e test in short mode")
+	}
+
+	if _, err := exec.LookPath("zsh"); err != nil {
+		t.Skip("zsh not available, skipping zsh interactive test")
+	}
+
+	tmpDir := t.TempDir()
+	repoDir := filepath.Join(tmpDir, "test-repo")
+	worktreeRoot := filepath.Join(tmpDir, "worktrees")
+
+	setupTestRepo(t, repoDir)
+	wtBinary := buildWtBinary(t, tmpDir)
+
+	rcContent := fmt.Sprintf(`
+export WORKTREE_ROOT=%s
+export PATH=%s:$PATH
+cd %s
+autoload -Uz compinit
+compinit
+source <(%s shellenv)
+echo "=== WT SHELLENV LOADED ==="
+`, worktreeRoot, filepath.Dir(wtBinary), repoDir, wtBinary)
+
+	ps, err := newPtyZsh(t, rcContent)
+	if err != nil {
+		t.Fatalf("Failed to create pty zsh: %v", err)
+	}
+	defer ps.close()
+
+	time.Sleep(getInitWaitTime())
+	ctx, cancel := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel()
+	if err := ps.waitForText(ctx, "=== WT SHELLENV LOADED ==="); err != nil {
+		t.Fatalf("Failed to load shellenv: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+
+	ps.resetOutput()
+	if err := ps.send("wt config pa\t\n"); err != nil {
+		t.Fatalf("Failed to send config subcommand completion input: %v", err)
+	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel2()
+	if err := ps.waitForText(ctx2, "config.toml"); err != nil {
+		t.Fatalf("zsh config subcommand completion failed: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+}
+
+// TestBashTabCompletionForConfigSubcommands verifies bash completes config subcommands
+// (e.g., "wt config pa<Tab>" -> "wt config path").
+func TestBashTabCompletionForConfigSubcommands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping interactive e2e test in short mode")
+	}
+
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available, skipping bash interactive test")
+	}
+
+	tmpDir := t.TempDir()
+	repoDir := filepath.Join(tmpDir, "test-repo")
+	worktreeRoot := filepath.Join(tmpDir, "worktrees")
+
+	setupTestRepo(t, repoDir)
+	wtBinary := buildWtBinary(t, tmpDir)
+
+	rcContent := fmt.Sprintf(`
+export WORKTREE_ROOT=%s
+export PATH=%s:$PATH
+cd %s
+source <(%s shellenv)
+echo "=== WT SHELLENV LOADED ==="
+`, worktreeRoot, filepath.Dir(wtBinary), repoDir, wtBinary)
+
+	ps, err := newPtyBash(t, rcContent)
+	if err != nil {
+		t.Fatalf("Failed to create pty bash: %v", err)
+	}
+	defer ps.close()
+
+	time.Sleep(getInitWaitTime())
+	ctx, cancel := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel()
+	if err := ps.waitForText(ctx, "=== WT SHELLENV LOADED ==="); err != nil {
+		t.Fatalf("Failed to load shellenv: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+
+	ps.resetOutput()
+	if err := ps.send("wt config pa\t\n"); err != nil {
+		t.Fatalf("Failed to send config subcommand completion input: %v", err)
+	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel2()
+	if err := ps.waitForText(ctx2, "config.toml"); err != nil {
+		t.Fatalf("bash config subcommand completion failed: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+}
+
+// TestInteractiveCheckoutWithoutArgsPowerShell verifies interactive checkout prompt
+// in PowerShell when running 'wt co' without a branch argument.
 func TestInteractiveCheckoutWithoutArgsPowerShell(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping interactive e2e test in short mode")
@@ -728,21 +1044,14 @@ Write-Output "Built wt binary: %s"
 		t.Fatalf("Failed to send command: %v", err)
 	}
 
-	// Try to wait for the branch selection prompt to appear
+	// Wait for the branch selection prompt to appear
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel2()
 
 	err = ps.waitForText(ctx2, "Select branch to checkout")
 	if err != nil {
-		// This is the EXPECTED behavior with the bug - the prompt never appears
-		t.Logf("BUG CONFIRMED: Interactive prompt did not appear within timeout")
-		t.Logf("Output captured:\n%s", ps.getOutput())
-		t.Fatalf("Interactive checkout hung: %v", err)
+		t.Fatalf("Interactive checkout prompt did not appear: %v\nOutput:\n%s", err, ps.getOutput())
 	}
-
-	// If we reach here, the bug is fixed!
-	t.Log("SUCCESS: Interactive prompt appeared!")
-	t.Log("The bug appears to be fixed.")
 
 	// Cancel the prompt and exit cleanly
 	ps.send("\x03") // Ctrl-C to cancel the prompt
@@ -844,6 +1153,199 @@ Write-Output "=== WT SHELLENV LOADED ==="
 	t.Log("SUCCESS: Non-interactive checkout with explicit branch name works correctly")
 }
 
+// TestPowerShellCompletionForCheckoutBranch verifies positive PowerShell completion
+// by querying the completion API after shellenv registration.
+func TestPowerShellCompletionForCheckoutBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping interactive e2e test in short mode")
+	}
+
+	if runtime.GOOS != "windows" {
+		t.Skip("Skipping PowerShell PTY test on non-Windows (upstream bug #14932)")
+	}
+
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		if _, err := exec.LookPath("powershell"); err != nil {
+			t.Skip("PowerShell not available, skipping PowerShell interactive test")
+		}
+	}
+
+	tmpDir := t.TempDir()
+	repoDir := filepath.Join(tmpDir, "test-repo")
+	worktreeRoot := filepath.Join(tmpDir, "worktrees")
+
+	setupTestRepo(t, repoDir)
+	wtBinary := buildWtBinary(t, tmpDir)
+
+	branch := "AIG-pwsh-completion-branch"
+	existingPath := filepath.Join(tmpDir, "existing-pwsh-completion-worktree")
+	runGitCommand(t, repoDir, "worktree", "add", "-b", branch, existingPath, "main")
+
+	wtBinaryWin := filepath.ToSlash(wtBinary)
+	repoDirWin := filepath.ToSlash(repoDir)
+	worktreeRootWin := filepath.ToSlash(worktreeRoot)
+	binDir := filepath.ToSlash(filepath.Dir(wtBinary))
+
+	profileContent := fmt.Sprintf(`
+$env:WORKTREE_ROOT = '%s'
+$env:PATH = '%s;' + $env:PATH
+Set-Location '%s'
+& '%s' shellenv | Out-String | Invoke-Expression
+Write-Output "=== WT SHELLENV LOADED ==="
+`, worktreeRootWin, binDir, repoDirWin, wtBinaryWin)
+
+	ps, err := newPtyPowerShell(t, profileContent)
+	if err != nil {
+		t.Fatalf("Failed to create pty PowerShell: %v", err)
+	}
+	defer ps.close()
+
+	time.Sleep(getInitWaitTime())
+	ctx, cancel := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel()
+	if err := ps.waitForText(ctx, "=== WT SHELLENV LOADED ==="); err != nil {
+		t.Fatalf("Failed to load shellenv: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+
+	ps.resetOutput()
+	completionCmd := "$line = 'wt co AIG'; $cursor = $line.Length; [System.Management.Automation.CommandCompletion]::CompleteInput($line, $cursor, $null).CompletionMatches | ForEach-Object { $_.CompletionText }\r\n"
+	if err := ps.send(completionCmd); err != nil {
+		t.Fatalf("Failed to send completion API command: %v", err)
+	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel2()
+	if err := ps.waitForText(ctx2, branch); err != nil {
+		t.Fatalf("PowerShell completion did not return expected branch %q: %v\nOutput:\n%s", branch, err, ps.getOutput())
+	}
+}
+
+// TestPowerShellCompletionForCommands verifies command completion includes
+// the expected 'version' subcommand.
+func TestPowerShellCompletionForCommands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping interactive e2e test in short mode")
+	}
+
+	if runtime.GOOS != "windows" {
+		t.Skip("Skipping PowerShell PTY test on non-Windows (upstream bug #14932)")
+	}
+
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		if _, err := exec.LookPath("powershell"); err != nil {
+			t.Skip("PowerShell not available, skipping PowerShell interactive test")
+		}
+	}
+
+	tmpDir := t.TempDir()
+	repoDir := filepath.Join(tmpDir, "test-repo")
+	worktreeRoot := filepath.Join(tmpDir, "worktrees")
+
+	setupTestRepo(t, repoDir)
+	wtBinary := buildWtBinary(t, tmpDir)
+
+	wtBinaryWin := filepath.ToSlash(wtBinary)
+	repoDirWin := filepath.ToSlash(repoDir)
+	worktreeRootWin := filepath.ToSlash(worktreeRoot)
+	binDir := filepath.ToSlash(filepath.Dir(wtBinary))
+
+	profileContent := fmt.Sprintf(`
+$env:WORKTREE_ROOT = '%s'
+$env:PATH = '%s;' + $env:PATH
+Set-Location '%s'
+& '%s' shellenv | Out-String | Invoke-Expression
+Write-Output "=== WT SHELLENV LOADED ==="
+`, worktreeRootWin, binDir, repoDirWin, wtBinaryWin)
+
+	ps, err := newPtyPowerShell(t, profileContent)
+	if err != nil {
+		t.Fatalf("Failed to create pty PowerShell: %v", err)
+	}
+	defer ps.close()
+
+	time.Sleep(getInitWaitTime())
+	ctx, cancel := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel()
+	if err := ps.waitForText(ctx, "=== WT SHELLENV LOADED ==="); err != nil {
+		t.Fatalf("Failed to load shellenv: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+
+	ps.resetOutput()
+	completionCmd := "$line = 'wt ve'; $cursor = $line.Length; [System.Management.Automation.CommandCompletion]::CompleteInput($line, $cursor, $null).CompletionMatches | ForEach-Object { $_.CompletionText }\r\n"
+	if err := ps.send(completionCmd); err != nil {
+		t.Fatalf("Failed to send completion API command: %v", err)
+	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel2()
+	if err := ps.waitForText(ctx2, "version"); err != nil {
+		t.Fatalf("PowerShell command completion did not return 'version': %v\nOutput:\n%s", err, ps.getOutput())
+	}
+}
+
+// TestPowerShellCompletionForConfigSubcommands verifies completion includes
+// expected config subcommands for the second argument.
+func TestPowerShellCompletionForConfigSubcommands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping interactive e2e test in short mode")
+	}
+
+	if runtime.GOOS != "windows" {
+		t.Skip("Skipping PowerShell PTY test on non-Windows (upstream bug #14932)")
+	}
+
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		if _, err := exec.LookPath("powershell"); err != nil {
+			t.Skip("PowerShell not available, skipping PowerShell interactive test")
+		}
+	}
+
+	tmpDir := t.TempDir()
+	repoDir := filepath.Join(tmpDir, "test-repo")
+	worktreeRoot := filepath.Join(tmpDir, "worktrees")
+
+	setupTestRepo(t, repoDir)
+	wtBinary := buildWtBinary(t, tmpDir)
+
+	wtBinaryWin := filepath.ToSlash(wtBinary)
+	repoDirWin := filepath.ToSlash(repoDir)
+	worktreeRootWin := filepath.ToSlash(worktreeRoot)
+	binDir := filepath.ToSlash(filepath.Dir(wtBinary))
+
+	profileContent := fmt.Sprintf(`
+$env:WORKTREE_ROOT = '%s'
+$env:PATH = '%s;' + $env:PATH
+Set-Location '%s'
+& '%s' shellenv | Out-String | Invoke-Expression
+Write-Output "=== WT SHELLENV LOADED ==="
+`, worktreeRootWin, binDir, repoDirWin, wtBinaryWin)
+
+	ps, err := newPtyPowerShell(t, profileContent)
+	if err != nil {
+		t.Fatalf("Failed to create pty PowerShell: %v", err)
+	}
+	defer ps.close()
+
+	time.Sleep(getInitWaitTime())
+	ctx, cancel := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel()
+	if err := ps.waitForText(ctx, "=== WT SHELLENV LOADED ==="); err != nil {
+		t.Fatalf("Failed to load shellenv: %v\nOutput:\n%s", err, ps.getOutput())
+	}
+
+	ps.resetOutput()
+	completionCmd := "$line = 'wt config pa'; $cursor = $line.Length; [System.Management.Automation.CommandCompletion]::CompleteInput($line, $cursor, $null).CompletionMatches | ForEach-Object { $_.CompletionText }\r\n"
+	if err := ps.send(completionCmd); err != nil {
+		t.Fatalf("Failed to send completion API command: %v", err)
+	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), getContextTimeout())
+	defer cancel2()
+	if err := ps.waitForText(ctx2, "path"); err != nil {
+		t.Fatalf("PowerShell config subcommand completion did not return 'path': %v\nOutput:\n%s", err, ps.getOutput())
+	}
+}
+
 // Helper functions for test setup
 
 func setupTestRepo(t *testing.T, repoDir string) {
@@ -863,20 +1365,33 @@ func setupTestRepo(t *testing.T, repoDir string) {
 
 func buildWtBinary(t *testing.T, tmpDir string) string {
 	t.Helper()
+	_ = tmpDir // Kept for backward compatibility with existing call sites.
 
-	binaryName := "wt"
-	// On Windows, executables need .exe extension
-	if filepath.Separator == '\\' {
-		binaryName = "wt.exe"
+	builtWtBinaryOnce.Do(func() {
+		buildDir, err := os.MkdirTemp("", "wt-e2e-binary-")
+		if err != nil {
+			builtWtBinaryErr = fmt.Errorf("failed to create temp dir for wt binary: %w", err)
+			return
+		}
+
+		binaryName := "wt"
+		if filepath.Separator == '\\' {
+			binaryName = "wt.exe"
+		}
+
+		builtWtBinaryPath = filepath.Join(buildDir, binaryName)
+		cmd := exec.Command("go", "build", "-o", builtWtBinaryPath, ".")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			builtWtBinaryErr = fmt.Errorf("failed to build wt binary: %v\nOutput: %s", err, output)
+			return
+		}
+	})
+
+	if builtWtBinaryErr != nil {
+		t.Fatal(builtWtBinaryErr)
 	}
 
-	binaryPath := filepath.Join(tmpDir, binaryName)
-	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to build wt binary: %v\nOutput: %s", err, output)
-	}
-
-	return binaryPath
+	return builtWtBinaryPath
 }
 
 func runGitCommand(t *testing.T, dir string, args ...string) {
