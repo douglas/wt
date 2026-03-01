@@ -1,50 +1,63 @@
 wt - LLM Quick Context
 
-Purpose
+Audience
+- This file is for LLMs and coding agents that index or enter this repository.
+- It serves two audiences: (1) users of the wt tool, and (2) contributors changing wt source code.
+
+What wt is
 - wt is a Git worktree manager written in Go.
-- It helps create, checkout, list, and remove worktrees with predictable paths.
+- It creates, checks out, lists, and removes worktrees with predictable paths.
 
-Primary commands
-- wt create <branch> [base-branch]
-- wt checkout <branch>  (alias: wt co)
-- wt list               (alias: wt ls)
-- wt remove <branch>    (alias: wt rm)
-- wt pr [number|url]    (GitHub PR branch checkout via gh)
-- wt mr [number|url]    (GitLab MR branch checkout via glab)
-- wt info               (show effective location strategy/pattern)
-- wt init               (install shell integration)
+Section A: Using wt (installed tool consumers)
+- Use this section if you are helping someone USE wt, not modify this repository.
+- Primary commands:
+  - wt create <branch> [base-branch]
+  - wt checkout <branch> (alias: wt co)
+  - wt list (alias: wt ls)
+  - wt remove <branch> (alias: wt rm)
+  - wt pr [number|url] (requires gh)
+  - wt mr [number|url] (requires glab)
+  - wt info
+  - wt init
+- Typical consumer workflow:
+  1) wt create feat/short-description
+  2) Work in the created worktree
+  3) wt ls to inspect worktrees
+  4) wt rm <branch> when done
+- Consumer checks:
+  - No Go test/build/e2e steps are required to use an installed wt binary.
 
-Core workflow rule
-- Do not switch branches in the user's main checkout for task work.
-- Create an isolated worktree for each task with wt create.
+Section B: Contributing to wt (project authors/maintainers)
+- Use this section only when modifying files in this repository.
+- Contributor workflow rule:
+  - Do not switch branches in the main checkout for task work.
+  - Create an isolated worktree per task with wt create.
+- Contributor validation checks:
+  - go test ./...
+  - go build -o bin/wt .
+  - go run e2e/run.go
 
-Agent-safe workflow
-1) Create task worktree: wt create feat/short-description
-2) Work only inside that worktree path
-3) Run checks: go test ./... && go build -o bin/wt . && go run e2e/run.go
-4) Commit with Conventional Commits
-5) Push branch and open PR/MR
-6) Cleanup after merge: wt rm <branch>
-
-Configuration
+Configuration and hooks
 - Config file: ~/.config/wt/config.toml (or WT_CONFIG / --config)
 - Key settings: root, strategy, pattern, separator
 - Env overrides: WORKTREE_ROOT, WORKTREE_STRATEGY, WORKTREE_PATTERN, WORKTREE_SEPARATOR
-
-Hooks
 - Supported hooks: pre/post create, checkout, remove, pr, mr
 - Hook env vars: WT_PATH, WT_BRANCH, WT_MAIN, WT_REPO_NAME, WT_REPO_HOST, WT_REPO_OWNER
 - Disable hooks: WT_HOOKS_DISABLED=1
 
 Dependencies
 - Required: git
-- Optional: gh (wt pr), glab (wt mr)
-- Build: Go 1.24+
+- Optional: gh (for wt pr), glab (for wt mr)
+- Build from source: Go 1.24+
 
 Canonical docs
-- AGENTS.md: agent workflow and project-specific guardrails
-- README.md: command usage, config, examples
-- CONTRIBUTING.md: contribution and CI workflow
+- README.md: user-facing command usage, config, examples
+- AGENTS.md: agent workflow and guardrails for repo changes
+- CONTRIBUTING.md: contribution workflow and CI expectations
 
-Notes for non-interactive environments
-- Prefer explicit args over interactive prompts: wt co <branch>, wt rm <branch>, wt pr <id>, wt mr <id>
+Non-interactive execution note
+- For agent/CI contexts, prefer explicit args over interactive prompts:
+  - wt co <branch>
+  - wt rm <branch>
+  - wt pr <id>
+  - wt mr <id>
