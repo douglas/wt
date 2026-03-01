@@ -1,0 +1,50 @@
+wt - LLM Quick Context
+
+Purpose
+- wt is a Git worktree manager written in Go.
+- It helps create, checkout, list, and remove worktrees with predictable paths.
+
+Primary commands
+- wt create <branch> [base-branch]
+- wt checkout <branch>  (alias: wt co)
+- wt list               (alias: wt ls)
+- wt remove <branch>    (alias: wt rm)
+- wt pr [number|url]    (GitHub PR branch checkout via gh)
+- wt mr [number|url]    (GitLab MR branch checkout via glab)
+- wt info               (show effective location strategy/pattern)
+- wt init               (install shell integration)
+
+Core workflow rule
+- Do not switch branches in the user's main checkout for task work.
+- Create an isolated worktree for each task with wt create.
+
+Agent-safe workflow
+1) Create task worktree: wt create feat/short-description
+2) Work only inside that worktree path
+3) Run checks: go test ./... && go build -o bin/wt . && go run e2e/run.go
+4) Commit with Conventional Commits
+5) Push branch and open PR/MR
+6) Cleanup after merge: wt rm <branch>
+
+Configuration
+- Config file: ~/.config/wt/config.toml (or WT_CONFIG / --config)
+- Key settings: root, strategy, pattern, separator
+- Env overrides: WORKTREE_ROOT, WORKTREE_STRATEGY, WORKTREE_PATTERN, WORKTREE_SEPARATOR
+
+Hooks
+- Supported hooks: pre/post create, checkout, remove, pr, mr
+- Hook env vars: WT_PATH, WT_BRANCH, WT_MAIN, WT_REPO_NAME, WT_REPO_HOST, WT_REPO_OWNER
+- Disable hooks: WT_HOOKS_DISABLED=1
+
+Dependencies
+- Required: git
+- Optional: gh (wt pr), glab (wt mr)
+- Build: Go 1.24+
+
+Canonical docs
+- AGENTS.md: agent workflow and project-specific guardrails
+- README.md: command usage, config, examples
+- CONTRIBUTING.md: contribution and CI workflow
+
+Notes for non-interactive environments
+- Prefer explicit args over interactive prompts: wt co <branch>, wt rm <branch>, wt pr <id>, wt mr <id>
