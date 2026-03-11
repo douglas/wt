@@ -48,6 +48,57 @@ func TestMigrateCommandFlags(t *testing.T) {
 	}
 }
 
+func TestMigrateMovesPrimaryCheckoutOutOfWorktreeRoot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping migrate integration test in short mode")
+	}
+
+	tmpDir := t.TempDir()
+	homeDir := filepath.Join(tmpDir, "home")
+	worktreeRoot := filepath.Join(homeDir, "dev", "worktrees")
+	primaryPath := filepath.Join(worktreeRoot, "test-repo")
+	legacyPath := filepath.Join(tmpDir, "legacy", "feature-move")
+
+	if err := os.MkdirAll(primaryPath, 0o755); err != nil {
+		t.Fatalf("Failed to create primary checkout path: %v", err)
+	}
+
+	setupTestRepo(t, primaryPath)
+	runGitCommand(t, primaryPath, "remote", "add", "origin", "https://github.com/acme/test-repo.git")
+	runGitCommand(t, primaryPath, "branch", "feature-move")
+
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
+		t.Fatalf("Failed to create legacy root: %v", err)
+	}
+	runGitCommand(t, primaryPath, "worktree", "add", legacyPath, "feature-move")
+
+	wtBinary := buildWtBinary(t, tmpDir)
+
+	applyCmd := exec.Command(wtBinary, "migrate", "--apply")
+	applyCmd.Dir = primaryPath
+	applyCmd.Env = append(os.Environ(), "HOME="+homeDir, "WORKTREE_ROOT="+worktreeRoot)
+	applyOutput, applyErr := applyCmd.CombinedOutput()
+	if applyErr != nil {
+		t.Fatalf("migrate --apply failed: %v\nOutput: %s", applyErr, applyOutput)
+	}
+
+	expectedPrimaryPath := filepath.Join(homeDir, "src", "acme", "test-repo")
+	if _, err := os.Stat(expectedPrimaryPath); err != nil {
+		t.Fatalf("expected primary checkout at %s: %v\nOutput: %s", expectedPrimaryPath, err, applyOutput)
+	}
+	if _, err := os.Stat(filepath.Join(primaryPath, ".git")); !os.IsNotExist(err) {
+		t.Fatalf("expected old primary path to no longer be a primary checkout, got err: %v", err)
+	}
+
+	expectedFeaturePath := filepath.Join(worktreeRoot, "test-repo", "feature-move")
+	if _, err := os.Stat(expectedFeaturePath); err != nil {
+		t.Fatalf("expected feature worktree at %s: %v", expectedFeaturePath, err)
+	}
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy feature path to be removed, got err: %v", err)
+	}
+}
+
 func TestMigratePreviewAndApplyMovesWorktree(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping migrate integration test in short mode")

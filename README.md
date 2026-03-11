@@ -159,6 +159,8 @@ wt rm                             # interactive: select from existing worktrees
 wt migrate                        # preview only (no changes)
 wt migrate --apply                # apply migration
 wt migrate --apply --force        # force when target path exists
+# If the primary checkout is under WORKTREE_ROOT, migrate moves it to ~/src/<owner>/<repo>
+# (or ~/src/<repo> when remote owner is unavailable) and repairs linked worktrees.
 
 # Clean up stale worktree administrative files
 wt prune

@@ -26,11 +26,12 @@ type parsedWorktree struct {
 }
 
 type migrateItem struct {
-	Branch string
-	From   string
-	To     string
-	Action migrateAction
-	Reason string
+	Branch  string
+	From    string
+	To      string
+	Primary bool
+	Action  migrateAction
+	Reason  string
 }
 
 type targetState int
@@ -48,7 +49,7 @@ var migrateCmd = &cobra.Command{
 	Long: `Migrate existing linked worktrees to the currently configured location strategy.
 
 By default this command previews what would change. Use --apply to perform moves.
-Main worktree is never moved.
+If the primary checkout lives under WORKTREE_ROOT, it is moved back under ~/src.
 
 Examples:
   wt migrate
@@ -137,20 +138,89 @@ func buildMigratePlan(entries []parsedWorktree, force bool) ([]migrateItem, erro
 
 	var plan []migrateItem
 
+	absWorktreeRoot, err := filepath.Abs(worktreeRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve WORKTREE_ROOT: %w", err)
+	}
+	absWorktreeRoot = filepath.Clean(absWorktreeRoot)
+	primaryTarget := resolvePrimaryCheckoutTarget(info)
+
 	for _, wt := range entries {
+		from := filepath.Clean(wt.Path)
+		branchLabel := strings.TrimSpace(wt.Branch)
+		if branchLabel == "" {
+			branchLabel = "<detached>"
+		}
+
 		if wt.Main {
-			plan = append(plan, migrateItem{
-				Branch: wt.Branch,
-				From:   filepath.Clean(wt.Path),
-				Action: migrateActionSkip,
-				Reason: "primary checkout remains in place",
-			})
+			if !isPathWithinRoot(from, absWorktreeRoot) {
+				plan = append(plan, migrateItem{
+					Branch:  branchLabel,
+					From:    from,
+					Primary: true,
+					Action:  migrateActionSkip,
+					Reason:  "primary checkout already outside WORKTREE_ROOT",
+				})
+				continue
+			}
+
+			to := filepath.Clean(primaryTarget)
+			if from == to {
+				plan = append(plan, migrateItem{
+					Branch:  branchLabel,
+					From:    from,
+					To:      to,
+					Primary: true,
+					Action:  migrateActionSkip,
+					Reason:  "primary checkout already at target path",
+				})
+				continue
+			}
+
+			state, err := detectTargetState(to)
+			if err != nil {
+				return nil, err
+			}
+
+			item := migrateItem{
+				Branch:  branchLabel,
+				From:    from,
+				To:      to,
+				Primary: true,
+				Action:  migrateActionMove,
+			}
+
+			switch state {
+			case targetMissing:
+				// move
+			case targetDirEmpty:
+				item.Reason = "target path exists but is empty"
+			case targetDirNonEmpty:
+				if force {
+					item.Action = migrateActionMoveForce
+					item.Reason = "target path exists and is non-empty (force)"
+				} else {
+					item.Action = migrateActionSkip
+					item.Reason = "target path exists and is non-empty"
+				}
+			case targetFile:
+				if force {
+					item.Action = migrateActionMoveForce
+					item.Reason = "target path exists as file (force)"
+				} else {
+					item.Action = migrateActionSkip
+					item.Reason = "target path exists as file"
+				}
+			}
+
+			plan = append(plan, item)
 			continue
 		}
+
 		if wt.Detached || strings.TrimSpace(wt.Branch) == "" {
 			plan = append(plan, migrateItem{
-				Branch: wt.Branch,
-				From:   wt.Path,
+				Branch: branchLabel,
+				From:   from,
 				To:     "",
 				Action: migrateActionSkip,
 				Reason: "detached or branchless worktree",
@@ -163,7 +233,6 @@ func buildMigratePlan(entries []parsedWorktree, force bool) ([]migrateItem, erro
 			return nil, err
 		}
 
-		from := filepath.Clean(wt.Path)
 		to := filepath.Clean(targetPath)
 
 		if from == to {
@@ -183,7 +252,7 @@ func buildMigratePlan(entries []parsedWorktree, force bool) ([]migrateItem, erro
 		}
 
 		item := migrateItem{
-			Branch: wt.Branch,
+			Branch: branchLabel,
 			From:   from,
 			To:     to,
 			Action: migrateActionMove,
@@ -262,17 +331,29 @@ func printMigratePreview(plan []migrateItem) {
 	for _, item := range plan {
 		switch item.Action {
 		case migrateActionMove:
-			fmt.Printf("  - would move %s\n    from: %s\n    to:   %s\n", item.Branch, item.From, item.To)
+			if item.Primary {
+				fmt.Printf("  - would move primary checkout\n    from: %s\n    to:   %s\n", item.From, item.To)
+			} else {
+				fmt.Printf("  - would move %s\n    from: %s\n    to:   %s\n", item.Branch, item.From, item.To)
+			}
 			if item.Reason != "" {
 				fmt.Printf("    note: %s\n", item.Reason)
 			}
 		case migrateActionMoveForce:
-			fmt.Printf("  - would force-move %s\n    from: %s\n    to:   %s\n", item.Branch, item.From, item.To)
+			if item.Primary {
+				fmt.Printf("  - would force-move primary checkout\n    from: %s\n    to:   %s\n", item.From, item.To)
+			} else {
+				fmt.Printf("  - would force-move %s\n    from: %s\n    to:   %s\n", item.Branch, item.From, item.To)
+			}
 			if item.Reason != "" {
 				fmt.Printf("    note: %s\n", item.Reason)
 			}
 		case migrateActionSkip:
-			fmt.Printf("  - skip %s\n", item.Branch)
+			if item.Primary {
+				fmt.Println("  - skip primary checkout")
+			} else {
+				fmt.Printf("  - skip %s\n", item.Branch)
+			}
 			if item.From != "" {
 				fmt.Printf("    path: %s\n", item.From)
 			}
@@ -290,8 +371,35 @@ func applyMigratePlan(plan []migrateItem) error {
 	moveCount := 0
 	skipCount := 0
 	failCount := 0
+	var primaryItems []migrateItem
+	var secondaryItems []migrateItem
 
 	for _, item := range plan {
+		if item.Primary {
+			primaryItems = append(primaryItems, item)
+			continue
+		}
+		secondaryItems = append(secondaryItems, item)
+	}
+
+	for _, item := range primaryItems {
+		switch item.Action {
+		case migrateActionSkip:
+			fmt.Printf("Skipped primary checkout: %s\n", item.Reason)
+			skipCount++
+		case migrateActionMove, migrateActionMoveForce:
+			force := item.Action == migrateActionMoveForce
+			if err := movePrimaryCheckout(item.From, item.To, force); err != nil {
+				fmt.Printf("Failed primary checkout: %v\n", err)
+				failCount++
+				continue
+			}
+			fmt.Printf("Moved primary checkout: %s -> %s\n", item.From, item.To)
+			moveCount++
+		}
+	}
+
+	for _, item := range secondaryItems {
 		switch item.Action {
 		case migrateActionSkip:
 			fmt.Printf("Skipped %s: %s\n", item.Branch, item.Reason)
@@ -325,6 +433,71 @@ func applyMigratePlan(plan []migrateItem) error {
 	}
 
 	return nil
+}
+
+func movePrimaryCheckout(from, to string, force bool) error {
+	if err := prepareMigrateTarget(to, force); err != nil {
+		return err
+	}
+
+	if err := os.Rename(from, to); err != nil {
+		return fmt.Errorf("failed to move primary checkout from %s to %s: %w", from, to, err)
+	}
+
+	repairCmd := exec.Command("git", "-C", to, "worktree", "repair")
+	if output, err := repairCmd.CombinedOutput(); err != nil {
+		trimmed := strings.TrimSpace(string(output))
+		if trimmed != "" {
+			return fmt.Errorf("failed to repair worktrees after moving primary checkout: %v (%s)", err, trimmed)
+		}
+		return fmt.Errorf("failed to repair worktrees after moving primary checkout: %w", err)
+	}
+
+	return nil
+}
+
+func resolvePrimaryCheckoutTarget(info repoInfo) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join("src", info.Name)
+	}
+
+	srcRoot := filepath.Join(home, "src")
+	owner := strings.Trim(info.Owner, "/")
+	if owner == "" {
+		return filepath.Join(srcRoot, info.Name)
+	}
+
+	return filepath.Join(srcRoot, filepath.FromSlash(owner), info.Name)
+}
+
+func isPathWithinRoot(path, root string) bool {
+	cleanPath := canonicalExistingPath(path)
+	cleanRoot := canonicalExistingPath(root)
+
+	rel, err := filepath.Rel(cleanRoot, cleanPath)
+	if err != nil {
+		return false
+	}
+
+	if rel == "." {
+		return true
+	}
+
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+}
+
+func canonicalExistingPath(path string) string {
+	abs := path
+	if absolute, err := filepath.Abs(path); err == nil {
+		abs = absolute
+	}
+
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return filepath.Clean(resolved)
+	}
+
+	return filepath.Clean(abs)
 }
 
 func prepareMigrateTarget(target string, force bool) error {
