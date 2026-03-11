@@ -83,6 +83,9 @@ func TestMigratePreviewAndApplyMovesWorktree(t *testing.T) {
 	if !strings.Contains(string(previewOutput), branch) {
 		t.Fatalf("migrate preview output does not mention branch %q:\n%s", branch, previewOutput)
 	}
+	if !strings.Contains(string(previewOutput), "primary checkout") {
+		t.Fatalf("migrate preview output does not mention primary checkout handling:\n%s", previewOutput)
+	}
 
 	if _, err := os.Stat(oldPath); err != nil {
 		t.Fatalf("expected old worktree path to still exist after preview: %v", err)

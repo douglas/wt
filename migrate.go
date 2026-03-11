@@ -139,6 +139,12 @@ func buildMigratePlan(entries []parsedWorktree, force bool) ([]migrateItem, erro
 
 	for _, wt := range entries {
 		if wt.Main {
+			plan = append(plan, migrateItem{
+				Branch: wt.Branch,
+				From:   filepath.Clean(wt.Path),
+				Action: migrateActionSkip,
+				Reason: "primary checkout remains in place",
+			})
 			continue
 		}
 		if wt.Detached || strings.TrimSpace(wt.Branch) == "" {
