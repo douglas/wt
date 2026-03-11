@@ -155,6 +155,11 @@ wt remove old-branch
 wt rm old-branch                  # short alias
 wt rm                             # interactive: select from existing worktrees
 
+# Migrate existing worktrees to configured paths
+wt migrate                        # preview only (no changes)
+wt migrate --apply                # apply migration
+wt migrate --apply --force        # force when target path exists
+
 # Clean up stale worktree administrative files
 wt prune
 
