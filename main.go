@@ -72,7 +72,6 @@ func init() {
 	removeCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force removal even if worktree has modifications")
 	cleanupCmd.Flags().BoolVar(&cleanupDryRun, "dry-run", false, "Preview what would be removed without making changes")
 	cleanupCmd.Flags().BoolVarP(&cleanupForce, "force", "f", false, "Remove all merged worktrees without confirmation")
-	migrateCmd.Flags().BoolVar(&migrateApply, "apply", false, "Apply migration changes (default is preview)")
 	migrateCmd.Flags().BoolVarP(&migrateForce, "force", "f", false, "Force migration when target path exists and is non-empty")
 	initCmd.Flags().BoolVar(&initDryRun, "dry-run", false, "Preview changes without modifying files")
 	initCmd.Flags().BoolVar(&initUninstall, "uninstall", false, "Remove wt configuration from shell")
@@ -1114,7 +1113,6 @@ var (
 	removeForce   bool
 	cleanupDryRun bool
 	cleanupForce  bool
-	migrateApply  bool
 	migrateForce  bool
 )
 

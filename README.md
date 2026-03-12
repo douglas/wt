@@ -156,9 +156,8 @@ wt rm old-branch                  # short alias
 wt rm                             # interactive: select from existing worktrees
 
 # Migrate existing worktrees to configured paths
-wt migrate                        # preview only (no changes)
-wt migrate --apply                # apply migration
-wt migrate --apply --force        # force when target path exists
+wt migrate                        # migrate now
+wt migrate --force                # force when target path exists
 # If the primary checkout is under WORKTREE_ROOT, migrate moves it to ~/src/<owner>/<repo>
 # (or ~/src/<repo> when remote owner is unavailable) and repairs linked worktrees.
 

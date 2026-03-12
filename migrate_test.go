@@ -28,10 +28,6 @@ func TestMigrateCommandFlags(t *testing.T) {
 		if cmd.Name() == "migrate" {
 			migrateCommandFound = true
 
-			if applyFlag := cmd.Flags().Lookup("apply"); applyFlag == nil {
-				t.Error("migrate command missing --apply flag")
-			}
-
 			forceFlag := cmd.Flags().Lookup("force")
 			if forceFlag == nil {
 				t.Error("migrate command missing --force flag")
@@ -74,12 +70,12 @@ func TestMigrateMovesPrimaryCheckoutOutOfWorktreeRoot(t *testing.T) {
 
 	wtBinary := buildWtBinary(t, tmpDir)
 
-	applyCmd := exec.Command(wtBinary, "migrate", "--apply")
+	applyCmd := exec.Command(wtBinary, "migrate")
 	applyCmd.Dir = primaryPath
 	applyCmd.Env = append(os.Environ(), "HOME="+homeDir, "WORKTREE_ROOT="+worktreeRoot)
 	applyOutput, applyErr := applyCmd.CombinedOutput()
 	if applyErr != nil {
-		t.Fatalf("migrate --apply failed: %v\nOutput: %s", applyErr, applyOutput)
+		t.Fatalf("migrate failed: %v\nOutput: %s", applyErr, applyOutput)
 	}
 
 	expectedPrimaryPath := filepath.Join(homeDir, "src", "acme", "test-repo")
@@ -99,7 +95,7 @@ func TestMigrateMovesPrimaryCheckoutOutOfWorktreeRoot(t *testing.T) {
 	}
 }
 
-func TestMigratePreviewAndApplyMovesWorktree(t *testing.T) {
+func TestMigrateMovesWorktree(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping migrate integration test in short mode")
 	}
@@ -124,33 +120,12 @@ func TestMigratePreviewAndApplyMovesWorktree(t *testing.T) {
 	targetPath := filepath.Join(worktreeRoot, "test-repo", branch)
 	env := []string{"WORKTREE_ROOT=" + worktreeRoot}
 
-	previewCmd := exec.Command(wtBinary, "migrate")
-	previewCmd.Dir = repoDir
-	previewCmd.Env = append(os.Environ(), env...)
-	previewOutput, previewErr := previewCmd.CombinedOutput()
-	if previewErr != nil {
-		t.Fatalf("migrate preview failed: %v\nOutput: %s", previewErr, previewOutput)
-	}
-	if !strings.Contains(string(previewOutput), branch) {
-		t.Fatalf("migrate preview output does not mention branch %q:\n%s", branch, previewOutput)
-	}
-	if !strings.Contains(string(previewOutput), "primary checkout") {
-		t.Fatalf("migrate preview output does not mention primary checkout handling:\n%s", previewOutput)
-	}
-
-	if _, err := os.Stat(oldPath); err != nil {
-		t.Fatalf("expected old worktree path to still exist after preview: %v", err)
-	}
-	if _, err := os.Stat(targetPath); !os.IsNotExist(err) {
-		t.Fatalf("expected target path not to exist after preview, got err: %v", err)
-	}
-
-	applyCmd := exec.Command(wtBinary, "migrate", "--apply")
+	applyCmd := exec.Command(wtBinary, "migrate")
 	applyCmd.Dir = repoDir
 	applyCmd.Env = append(os.Environ(), env...)
 	applyOutput, applyErr := applyCmd.CombinedOutput()
 	if applyErr != nil {
-		t.Fatalf("migrate --apply failed: %v\nOutput: %s", applyErr, applyOutput)
+		t.Fatalf("migrate failed: %v\nOutput: %s", applyErr, applyOutput)
 	}
 
 	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
@@ -192,12 +167,15 @@ func TestMigrateSkipsNonEmptyTargetWithoutForce(t *testing.T) {
 		t.Fatalf("Failed to create conflict file: %v", err)
 	}
 
-	applyCmd := exec.Command(wtBinary, "migrate", "--apply")
+	applyCmd := exec.Command(wtBinary, "migrate")
 	applyCmd.Dir = repoDir
 	applyCmd.Env = append(os.Environ(), "WORKTREE_ROOT="+worktreeRoot)
 	applyOutput, applyErr := applyCmd.CombinedOutput()
 	if applyErr != nil {
-		t.Fatalf("migrate --apply failed: %v\nOutput: %s", applyErr, applyOutput)
+		t.Fatalf("migrate failed: %v\nOutput: %s", applyErr, applyOutput)
+	}
+	if !strings.Contains(string(applyOutput), "Skipped "+branch) {
+		t.Fatalf("expected migrate output to mention skip for %q, got:\n%s", branch, applyOutput)
 	}
 
 	if _, err := os.Stat(oldPath); err != nil {
@@ -239,12 +217,12 @@ func TestMigrateForceReplacesNonEmptyTarget(t *testing.T) {
 		t.Fatalf("Failed to create conflict file: %v", err)
 	}
 
-	applyCmd := exec.Command(wtBinary, "migrate", "--apply", "--force")
+	applyCmd := exec.Command(wtBinary, "migrate", "--force")
 	applyCmd.Dir = repoDir
 	applyCmd.Env = append(os.Environ(), "WORKTREE_ROOT="+worktreeRoot)
 	applyOutput, applyErr := applyCmd.CombinedOutput()
 	if applyErr != nil {
-		t.Fatalf("migrate --apply --force failed: %v\nOutput: %s", applyErr, applyOutput)
+		t.Fatalf("migrate --force failed: %v\nOutput: %s", applyErr, applyOutput)
 	}
 
 	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {

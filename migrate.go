@@ -48,13 +48,11 @@ var migrateCmd = &cobra.Command{
 	Short: "Migrate existing worktrees to configured paths",
 	Long: `Migrate existing linked worktrees to the currently configured location strategy.
 
-By default this command previews what would change. Use --apply to perform moves.
 If the primary checkout lives under WORKTREE_ROOT, it is moved back under ~/src.
 
 Examples:
   wt migrate
-  wt migrate --apply
-  wt migrate --apply --force`,
+  wt migrate --force`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		entries, err := listParsedWorktrees()
 		if err != nil {
@@ -64,11 +62,6 @@ Examples:
 		plan, err := buildMigratePlan(entries, migrateForce)
 		if err != nil {
 			return err
-		}
-
-		if !migrateApply {
-			printMigratePreview(plan)
-			return nil
 		}
 
 		return applyMigratePlan(plan)
@@ -309,62 +302,6 @@ func detectTargetState(target string) (targetState, error) {
 	}
 
 	return targetDirNonEmpty, nil
-}
-
-func printMigratePreview(plan []migrateItem) {
-	moveCount := 0
-	skipCount := 0
-	for _, item := range plan {
-		if item.Action == migrateActionMove || item.Action == migrateActionMoveForce {
-			moveCount++
-		} else {
-			skipCount++
-		}
-	}
-
-	if len(plan) == 0 {
-		fmt.Println("No linked worktrees found to migrate")
-		return
-	}
-
-	fmt.Println("Migration preview (no changes made):")
-	for _, item := range plan {
-		switch item.Action {
-		case migrateActionMove:
-			if item.Primary {
-				fmt.Printf("  - would move primary checkout\n    from: %s\n    to:   %s\n", item.From, item.To)
-			} else {
-				fmt.Printf("  - would move %s\n    from: %s\n    to:   %s\n", item.Branch, item.From, item.To)
-			}
-			if item.Reason != "" {
-				fmt.Printf("    note: %s\n", item.Reason)
-			}
-		case migrateActionMoveForce:
-			if item.Primary {
-				fmt.Printf("  - would force-move primary checkout\n    from: %s\n    to:   %s\n", item.From, item.To)
-			} else {
-				fmt.Printf("  - would force-move %s\n    from: %s\n    to:   %s\n", item.Branch, item.From, item.To)
-			}
-			if item.Reason != "" {
-				fmt.Printf("    note: %s\n", item.Reason)
-			}
-		case migrateActionSkip:
-			if item.Primary {
-				fmt.Println("  - skip primary checkout")
-			} else {
-				fmt.Printf("  - skip %s\n", item.Branch)
-			}
-			if item.From != "" {
-				fmt.Printf("    path: %s\n", item.From)
-			}
-			if item.Reason != "" {
-				fmt.Printf("    reason: %s\n", item.Reason)
-			}
-		}
-	}
-
-	fmt.Printf("\nSummary: %d move(s), %d skip(s)\n", moveCount, skipCount)
-	fmt.Println("Run 'wt migrate --apply' to perform these moves")
 }
 
 func applyMigratePlan(plan []migrateItem) error {

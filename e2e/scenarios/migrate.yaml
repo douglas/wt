@@ -3,25 +3,8 @@ name: migrate
 description: Test migration of existing worktrees to configured paths
 
 scenarios:
-  - name: migrate_preview_only
-    description: Preview reports move without applying changes
-    skip_os: [windows]  # Uses Unix test -d command
-    setup:
-      - create_branch: migrate-preview
-    steps:
-      - run: git worktree add "$REPO_DIR/../legacy/migrate-preview" migrate-preview
-        expect:
-          exit_code: 0
-      - run: WORKTREE_ROOT="$REPO_DIR/../worktrees" wt migrate
-        expect:
-          exit_code: 0
-          output_contains: "would move migrate-preview"
-      - run: test -d "$REPO_DIR/../legacy/migrate-preview" && echo "LEGACY_EXISTS"
-        expect:
-          output_contains: LEGACY_EXISTS
-
-  - name: migrate_apply_moves_worktree
-    description: Apply migrates worktree into configured root
+  - name: migrate_moves_worktree
+    description: Migrate moves worktree into configured root
     skip_os: [windows]  # Uses Unix test -d command
     setup:
       - create_branch: migrate-apply
@@ -29,7 +12,7 @@ scenarios:
       - run: git worktree add "$REPO_DIR/../legacy/migrate-apply" migrate-apply
         expect:
           exit_code: 0
-      - run: WORKTREE_ROOT="$REPO_DIR/../worktrees" wt migrate --apply
+      - run: WORKTREE_ROOT="$REPO_DIR/../worktrees" wt migrate
         expect:
           exit_code: 0
           output_contains: "Moved migrate-apply"
@@ -41,7 +24,7 @@ scenarios:
           output_contains: OLD_REMOVED
 
   - name: migrate_skip_non_empty_target_without_force
-    description: Apply skips when target exists and is non-empty without force
+    description: Migrate skips when target exists and is non-empty without force
     skip_os: [windows]  # Uses Unix test -d command
     setup:
       - create_branch: migrate-skip
@@ -51,7 +34,7 @@ scenarios:
           exit_code: 0
       - run: mkdir -p "$REPO_DIR/../worktrees/test-repo/migrate-skip"
       - run: echo "conflict" > "$REPO_DIR/../worktrees/test-repo/migrate-skip/conflict.txt"
-      - run: WORKTREE_ROOT="$REPO_DIR/../worktrees" wt migrate --apply
+      - run: WORKTREE_ROOT="$REPO_DIR/../worktrees" wt migrate
         expect:
           exit_code: 0
           output_contains: "Skipped migrate-skip"
@@ -63,7 +46,7 @@ scenarios:
           output_contains: CONFLICT_EXISTS
 
   - name: migrate_force_overwrites_non_empty_target
-    description: Apply with force replaces conflicting target path
+    description: Migrate with force replaces conflicting target path
     skip_os: [windows]  # Uses Unix test -d command
     setup:
       - create_branch: migrate-force
@@ -73,7 +56,7 @@ scenarios:
           exit_code: 0
       - run: mkdir -p "$REPO_DIR/../worktrees/test-repo/migrate-force"
       - run: echo "conflict" > "$REPO_DIR/../worktrees/test-repo/migrate-force/conflict.txt"
-      - run: WORKTREE_ROOT="$REPO_DIR/../worktrees" wt migrate --apply --force
+      - run: WORKTREE_ROOT="$REPO_DIR/../worktrees" wt migrate --force
         expect:
           exit_code: 0
           output_contains: "Moved migrate-force"
