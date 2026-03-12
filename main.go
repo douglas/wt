@@ -63,6 +63,7 @@ func init() {
 	rootCmd.AddCommand(removeCmd)
 	rootCmd.AddCommand(pruneCmd)
 	rootCmd.AddCommand(cleanupCmd)
+	rootCmd.AddCommand(migrateCmd)
 	rootCmd.AddCommand(shellenvCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(initCmd)
@@ -71,6 +72,7 @@ func init() {
 	removeCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force removal even if worktree has modifications")
 	cleanupCmd.Flags().BoolVar(&cleanupDryRun, "dry-run", false, "Preview what would be removed without making changes")
 	cleanupCmd.Flags().BoolVarP(&cleanupForce, "force", "f", false, "Remove all merged worktrees without confirmation")
+	migrateCmd.Flags().BoolVarP(&migrateForce, "force", "f", false, "Force migration when target path exists and is non-empty")
 	initCmd.Flags().BoolVar(&initDryRun, "dry-run", false, "Preview changes without modifying files")
 	initCmd.Flags().BoolVar(&initUninstall, "uninstall", false, "Remove wt configuration from shell")
 	initCmd.Flags().BoolVar(&initNoPrompt, "no-prompt", false, "Skip activation instructions (for automated installs)")
@@ -350,6 +352,30 @@ func branchExists(branch string) bool {
 }
 
 func buildWorktreePath(info repoInfo, branch string) (string, error) {
+	rendered, err := renderWorktreePath(info, branch)
+	if err != nil {
+		return "", err
+	}
+
+	parent := filepath.Dir(rendered)
+	infoStat, err := os.Stat(parent)
+	switch {
+	case err == nil:
+		if !infoStat.IsDir() {
+			return "", fmt.Errorf("worktree path %s is not a directory", parent)
+		}
+	case os.IsNotExist(err):
+		if err := os.MkdirAll(parent, 0o755); err != nil {
+			return "", fmt.Errorf("failed to create worktree directory %s: %w", parent, err)
+		}
+	default:
+		return "", fmt.Errorf("failed to access worktree directory %s: %w", parent, err)
+	}
+
+	return rendered, nil
+}
+
+func renderWorktreePath(info repoInfo, branch string) (string, error) {
 	pattern, err := resolveWorktreePattern()
 	if err != nil {
 		return "", err
@@ -406,21 +432,6 @@ func buildWorktreePath(info repoInfo, branch string) (string, error) {
 	}
 
 	rendered = filepath.Clean(rendered)
-	parent := filepath.Dir(rendered)
-	infoStat, err := os.Stat(parent)
-	switch {
-	case err == nil:
-		if !infoStat.IsDir() {
-			return "", fmt.Errorf("worktree path %s is not a directory", parent)
-		}
-	case os.IsNotExist(err):
-		if err := os.MkdirAll(parent, 0o755); err != nil {
-			return "", fmt.Errorf("failed to create worktree directory %s: %w", parent, err)
-		}
-	default:
-		return "", fmt.Errorf("failed to access worktree directory %s: %w", parent, err)
-	}
-
 	return rendered, nil
 }
 
@@ -1102,6 +1113,7 @@ var (
 	removeForce   bool
 	cleanupDryRun bool
 	cleanupForce  bool
+	migrateForce  bool
 )
 
 var removeCmd = &cobra.Command{
@@ -1514,7 +1526,7 @@ function wt {
 Register-ArgumentCompleter -CommandName wt -ScriptBlock {
     param($commandName, $wordToComplete, $commandAst, $fakeBoundParameters)
 
-    $commands = @('checkout', 'co', 'create', 'pr', 'mr', 'list', 'ls', 'remove', 'rm', 'cleanup', 'prune', 'help', 'shellenv', 'init', 'info', 'config', 'version')
+    $commands = @('checkout', 'co', 'create', 'pr', 'mr', 'list', 'ls', 'remove', 'rm', 'cleanup', 'migrate', 'prune', 'help', 'shellenv', 'init', 'info', 'config', 'version')
 
     # Get the position in the command line
     $position = $commandAst.CommandElements.Count - 1
@@ -1587,7 +1599,7 @@ if [ -n "$BASH_VERSION" ]; then
         COMPREPLY=()
         cur="${COMP_WORDS[COMP_CWORD]}"
         prev="${COMP_WORDS[COMP_CWORD-1]}"
-        commands="checkout co create pr mr list ls remove rm cleanup prune help shellenv init info config version"
+        commands="checkout co create pr mr list ls remove rm cleanup migrate prune help shellenv init info config version"
 
         # Complete commands if first argument
         if [ $COMP_CWORD -eq 1 ]; then
@@ -1627,6 +1639,7 @@ if [ -n "$ZSH_VERSION" ]; then
             'remove:Remove a worktree'
             'rm:Remove a worktree'
             'cleanup:Remove worktrees for merged branches'
+            'migrate:Migrate existing worktrees to configured paths'
             'prune:Remove worktree administrative files'
             'help:Show help'
             'shellenv:Output shell function for auto-cd'
