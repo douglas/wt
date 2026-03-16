@@ -1,0 +1,115 @@
+# E2E tests for global --format json behavior
+name: format-json
+description: Test JSON format output and no-auto-navigation behavior
+
+scenarios:
+  - name: version_json
+    description: version command returns JSON envelope
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN --format json version
+        expect:
+          exit_code: 0
+          output_contains: '"ok":true'
+      - run: $WT_BIN --format json version
+        expect:
+          output_contains: '"version"'
+
+  - name: list_json
+    description: list command returns structured JSON worktrees
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN --format json list
+        expect:
+          exit_code: 0
+          output_contains: '"worktrees"'
+
+  - name: create_json_no_navigation_marker
+    description: create command JSON omits navigation marker from stdout
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN --format json create feature-json
+        expect:
+          exit_code: 0
+          output_contains: '"navigate_to"'
+      - run: $WT_BIN --format json create feature-json
+        expect:
+          output_not_contains: "wt navigating to:"
+
+  - name: remove_json_requires_argument
+    description: remove command in json mode requires explicit branch argument
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN --format json remove
+        expect:
+          exit_code: 1
+          output_contains: "requires an explicit branch argument"
+
+  - name: cleanup_json_requires_force_or_dry_run
+    description: cleanup in json mode requires --force or --dry-run
+    skip_shellenv: true
+    setup:
+      - create_branch: merged-feature
+    steps:
+      - run: git merge --ff-only merged-feature
+        expect:
+          exit_code: 0
+      - run: $WT_BIN checkout merged-feature
+        expect:
+          exit_code: 0
+      - run: $WT_BIN --format json cleanup
+        expect:
+          exit_code: 1
+          output_contains: "requires --force or --dry-run"
+
+  - name: migrate_json_summary
+    description: migrate command returns structured JSON summary
+    skip_shellenv: true
+    skip_os: [windows]
+    setup:
+      - create_branch: migrate-json
+    steps:
+      - run: git worktree add "$REPO_DIR/../legacy/migrate-json" migrate-json
+        expect:
+          exit_code: 0
+      - run: WORKTREE_ROOT="$REPO_DIR/../worktrees" $WT_BIN --format json migrate
+        expect:
+          exit_code: 0
+          output_contains: '"command":"wt migrate"'
+      - run: WORKTREE_ROOT="$REPO_DIR/../worktrees" $WT_BIN --format json migrate
+        expect:
+          output_contains: '"migrated"'
+
+  - name: init_json_dry_run
+    description: init command returns JSON envelope in dry-run mode
+    skip_shellenv: true
+    skip_shells: [powershell, pwsh]
+    steps:
+      - run: HOME="$TEST_DIR/home" $WT_BIN --format json init bash --dry-run
+        expect:
+          exit_code: 0
+          output_contains: '"command":"wt init"'
+      - run: HOME="$TEST_DIR/home" $WT_BIN --format json init bash --dry-run
+        expect:
+          output_contains: '"status":"planned"'
+
+  - name: prune_json
+    description: prune command returns JSON envelope
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN --format json prune
+        expect:
+          exit_code: 0
+          output_contains: '"status":"pruned"'
+
+  - name: shellenv_json_note
+    description: shellenv command returns JSON note in json mode
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN --format json shellenv
+        expect:
+          exit_code: 0
+          output_contains: '"command":"wt shellenv"'
+      - run: $WT_BIN --format json shellenv
+        expect:
+          output_contains: 'shellenv outputs shell script text'

@@ -449,12 +449,14 @@ func generatePosixScript(wtBinary, shell string, scenario Scenario, verbose, sho
 						step.Expect.Branch, step.Expect.Branch))
 				}
 				if step.Expect.OutputContains != "" {
-					sb.WriteString(fmt.Sprintf("echo \"$__output\" | grep -q '%s' || { echo \"Output missing '%s'\"; exit 1; }\n",
-						step.Expect.OutputContains, step.Expect.OutputContains))
+					contains := strings.ReplaceAll(step.Expect.OutputContains, "'", "'\\''")
+					sb.WriteString(fmt.Sprintf("echo \"$__output\" | grep -F -q -- '%s' || { echo \"Output missing expected substring\"; exit 1; }\n",
+						contains))
 				}
 				if step.Expect.OutputNotContains != "" {
-					sb.WriteString(fmt.Sprintf("echo \"$__output\" | grep -q '%s' && { echo \"Output should not contain '%s'\"; exit 1; } || true\n",
-						step.Expect.OutputNotContains, step.Expect.OutputNotContains))
+					notContains := strings.ReplaceAll(step.Expect.OutputNotContains, "'", "'\\''")
+					sb.WriteString(fmt.Sprintf("echo \"$__output\" | grep -F -q -- '%s' && { echo \"Output should not contain expected substring\"; exit 1; } || true\n",
+						notContains))
 				}
 			}
 		}
@@ -488,7 +490,11 @@ func generatePowerShellScript(wtBinary string, scenario Scenario, verbose, showO
 	// Header
 	sb.WriteString("$ErrorActionPreference = 'Stop'\n")
 	sb.WriteString(fmt.Sprintf("$env:WT_BIN = '%s'\n", wtBinary))
-	sb.WriteString("$TestDir = Join-Path $env:TEMP \"wt-e2e-$(Get-Random)\"\n")
+	sb.WriteString("$__tmpBase = [System.IO.Path]::GetTempPath()\n")
+	sb.WriteString("if (-not $__tmpBase) { $__tmpBase = $env:TEMP }\n")
+	sb.WriteString("if (-not $__tmpBase) { $__tmpBase = $env:TMP }\n")
+	sb.WriteString("if (-not $__tmpBase) { $__tmpBase = $PWD.Path }\n")
+	sb.WriteString("$TestDir = Join-Path $__tmpBase \"wt-e2e-$(Get-Random)\"\n")
 	sb.WriteString("$RepoDir = Join-Path $TestDir 'test-repo'\n")
 	sb.WriteString("$env:WORKTREE_ROOT = Join-Path $TestDir 'worktrees'\n")
 	sb.WriteString("New-Item -ItemType Directory -Path $RepoDir -Force | Out-Null\n")
@@ -563,6 +569,10 @@ func generatePowerShellScript(wtBinary string, scenario Scenario, verbose, showO
 			needsOutput := step.Expect != nil && (step.Expect.OutputContains != "" || step.Expect.OutputNotContains != "")
 			expectsNonZero := step.Expect != nil && step.Expect.ExitCode != nil && *step.Expect.ExitCode != 0
 
+			if needsOutput {
+				sb.WriteString("$__output = ''\n")
+			}
+
 			if expectsNonZero {
 				// Handle expected non-zero exit codes
 				sb.WriteString("$__exit_code = 0\n")
@@ -574,6 +584,9 @@ func generatePowerShellScript(wtBinary string, scenario Scenario, verbose, showO
 				}
 				sb.WriteString("  $__exit_code = $LASTEXITCODE\n")
 				sb.WriteString("} catch {\n")
+				if needsOutput {
+					sb.WriteString("  $__output = ($_ | Out-String)\n")
+				}
 				sb.WriteString("  $__exit_code = 1\n")
 				sb.WriteString("}\n")
 			} else if needsOutput {
@@ -604,12 +617,16 @@ func generatePowerShellScript(wtBinary string, scenario Scenario, verbose, showO
 						step.Expect.Branch, step.Expect.Branch))
 				}
 				if step.Expect.OutputContains != "" {
-					sb.WriteString(fmt.Sprintf("if (-not $__output.Contains('%s')) { throw \"Output missing '%s'\" }\n",
-						step.Expect.OutputContains, step.Expect.OutputContains))
+					contains := strings.ReplaceAll(step.Expect.OutputContains, "'", "''")
+					sb.WriteString("if ($null -eq $__output) { $__output = '' }\n")
+					sb.WriteString(fmt.Sprintf("if (-not $__output.Contains('%s')) { throw \"Output missing expected substring\" }\n",
+						contains))
 				}
 				if step.Expect.OutputNotContains != "" {
-					sb.WriteString(fmt.Sprintf("if ($__output.Contains('%s')) { throw \"Output should not contain '%s'\" }\n",
-						step.Expect.OutputNotContains, step.Expect.OutputNotContains))
+					notContains := strings.ReplaceAll(step.Expect.OutputNotContains, "'", "''")
+					sb.WriteString("if ($null -eq $__output) { $__output = '' }\n")
+					sb.WriteString(fmt.Sprintf("if ($__output.Contains('%s')) { throw \"Output should not contain expected substring\" }\n",
+						notContains))
 				}
 			}
 		}

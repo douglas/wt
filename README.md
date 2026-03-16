@@ -185,7 +185,35 @@ wt config path          # Print the config file path
 # Show help
 wt --help
 wt <command> --help
+
+# Show practical examples
+wt examples
+
+# Use machine-readable output
+wt --format json version
+wt --format json list
+wt --format json
 ```
+
+### JSON Output (`--format json`)
+
+Most commands support machine-readable JSON output:
+
+```bash
+wt --format json version
+wt --format json info
+wt --format json config show
+wt --format json list
+wt --format json examples
+wt --format json          # root help in JSON envelope
+```
+
+Important behavior for shell integration:
+
+- In `text` mode (default), shell integration may auto-navigate to the target worktree.
+- In `json` mode, output is kept machine-readable and shell integration does **not** auto-navigate.
+
+For commands that normally prompt interactively (`wt co`, `wt rm`, `wt pr`, `wt mr`), pass explicit arguments when using `--format json`.
 
 ### Interactive Selection
 
@@ -248,6 +276,16 @@ wt list
 
 # Remove a worktree when done
 wt rm add-auth-feature
+
+# Show full examples catalog (filter with rg/grep if needed)
+wt examples
+
+# Each example includes outcome + path illustration based on config pattern
+# e.g. path example: $WORKTREE_ROOT/<repo>/<branch> -> (removed)
+# and concrete text/json output samples where relevant
+
+# JSON mode does not auto-navigate; use returned navigate_to
+wt --format json create add-auth-feature
 ```
 
 ## Configuration

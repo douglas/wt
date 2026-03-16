@@ -1,0 +1,130 @@
+# E2E tests for `wt examples` command
+name: examples
+description: Test examples command output and JSON behavior
+
+scenarios:
+  - name: examples_lists_full_catalog
+    description: examples command prints full catalog by default
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN examples
+        expect:
+          exit_code: 0
+          output_contains: "create: Create a new branch in a worktree"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "migrate: Migrate existing worktrees to configured paths"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "prune: Remove stale worktree administrative files"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "shellenv: Output shell wrapper for auto-navigation and completion"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "init: Initialize shell integration"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "examples: Show detailed command examples and outcomes"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "=>"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "path example:"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "text example:"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "json example:"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "global:"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "sibling-repo:"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "parent-branches:"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "parent-worktrees:"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "<repo-main-parent>"
+      - run: $WT_BIN examples
+        expect:
+          output_contains: "custom pattern:"
+
+  - name: examples_json_full_catalog
+    description: JSON output includes full topics catalog
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN --format json examples
+        expect:
+          exit_code: 0
+          output_contains: '"ok":true'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: '"catalog_scope":"full"'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: '"name":"create"'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: '"text_example"'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: '"json_example"'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: '"path_example":"global:'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: 'sibling-repo:'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: 'parent-branches:'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: 'parent-worktrees:'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: '"path_basis":"Static placeholders for one branch name across strategies.'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: 'custom pattern:'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: '"name":"prune"'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: '"name":"shellenv"'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: '"name":"init"'
+      - run: $WT_BIN --format json examples
+        expect:
+          output_contains: '"name":"examples"'
+
+  - name: root_help_json
+    description: root help honors json output format
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN --format json
+        expect:
+          exit_code: 0
+          output_contains: '"ok":true'
+      - run: $WT_BIN --format json
+        expect:
+          output_contains: '"help"'
+
+  - name: examples_rejects_topic_argument
+    description: topic filtering is removed from examples command
+    skip_shellenv: true
+    steps:
+      - run: $WT_BIN examples create
+        expect:
+          exit_code: 1
+          output_contains: "unknown command"
