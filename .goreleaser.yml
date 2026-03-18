@@ -28,6 +28,10 @@ builds:
       # Can be added later when Windows on ARM becomes more mainstream.
       - goos: windows
         goarch: arm64
+    hooks:
+      post:
+        - cmd: sh scripts/upx-compress.sh {{ .Path }}
+          output: true
 
 archives:
   - format: tar.gz
