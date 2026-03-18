@@ -1,36 +1,35 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-
-	"github.com/BurntSushi/toml"
 )
 
 // Config represents the wt configuration file structure.
 type Config struct {
-	Root      string `toml:"root"`
-	Strategy  string `toml:"strategy"`
-	Pattern   string `toml:"pattern"`
-	Separator string `toml:"separator"`
-	Hooks     Hooks  `toml:"hooks"`
+	Root      string
+	Strategy  string
+	Pattern   string
+	Separator string
+	Hooks     Hooks
 }
 
 // Hooks holds pre/post command hook commands.
 type Hooks struct {
-	PreCreate    []string `toml:"pre_create"`
-	PostCreate   []string `toml:"post_create"`
-	PreCheckout  []string `toml:"pre_checkout"`
-	PostCheckout []string `toml:"post_checkout"`
-	PreRemove    []string `toml:"pre_remove"`
-	PostRemove   []string `toml:"post_remove"`
-	PrePR        []string `toml:"pre_pr"`
-	PostPR       []string `toml:"post_pr"`
-	PreMR        []string `toml:"pre_mr"`
-	PostMR       []string `toml:"post_mr"`
+	PreCreate    []string
+	PostCreate   []string
+	PreCheckout  []string
+	PostCheckout []string
+	PreRemove    []string
+	PostRemove   []string
+	PrePR        []string
+	PostPR       []string
+	PreMR        []string
+	PostMR       []string
 }
 
 // configSource tracks where each config value came from.
@@ -156,8 +155,7 @@ func loadWorktreeConfig() {
 
 	if _, err := os.Stat(appCfg.ConfigFilePath); err == nil {
 		appCfg.ConfigFileFound = true
-		var cfg Config
-		if _, err := toml.DecodeFile(appCfg.ConfigFilePath, &cfg); err == nil {
+		if cfg, err := parseConfigFile(appCfg.ConfigFilePath); err == nil {
 			if cfg.Root != "" {
 				appCfg.Root = expandHome(cfg.Root)
 				appCfg.ConfigSources.Root = "config file"
@@ -194,6 +192,126 @@ func loadWorktreeConfig() {
 	if v, ok := os.LookupEnv("WORKTREE_SEPARATOR"); ok {
 		appCfg.Separator = v
 		appCfg.ConfigSources.Separator = "env: WORKTREE_SEPARATOR"
+	}
+}
+
+// parseConfigFile reads a TOML config file into a Config struct.
+// Handles the limited subset used by wt: string values, section headers,
+// and string arrays.
+func parseConfigFile(path string) (Config, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return Config{}, err
+	}
+	defer f.Close()
+
+	var cfg Config
+	section := ""
+	scanner := bufio.NewScanner(f)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Section header
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.TrimSpace(line[1 : len(line)-1])
+			continue
+		}
+
+		// Key = value
+		eqIdx := strings.Index(line, "=")
+		if eqIdx < 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:eqIdx])
+		val := strings.TrimSpace(line[eqIdx+1:])
+
+		// Parse value: string array or quoted string
+		if strings.HasPrefix(val, "[") {
+			arr := parseStringArray(val)
+			setHookField(&cfg.Hooks, section, key, arr)
+		} else {
+			s := unquoteString(val)
+			if section == "" {
+				switch key {
+				case "root":
+					cfg.Root = s
+				case "strategy":
+					cfg.Strategy = s
+				case "pattern":
+					cfg.Pattern = s
+				case "separator":
+					cfg.Separator = s
+				}
+			}
+		}
+	}
+
+	return cfg, scanner.Err()
+}
+
+// unquoteString removes surrounding double quotes from a TOML string value.
+func unquoteString(s string) string {
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
+// parseStringArray parses a TOML inline array of strings like ["a", "b"].
+func parseStringArray(s string) []string {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "[") || !strings.HasSuffix(s, "]") {
+		return nil
+	}
+	s = s[1 : len(s)-1]
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, item := range parts {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		result = append(result, unquoteString(item))
+	}
+	return result
+}
+
+// setHookField sets the appropriate Hooks field based on section and key.
+func setHookField(hooks *Hooks, section, key string, val []string) {
+	if section != "hooks" {
+		return
+	}
+	switch key {
+	case "pre_create":
+		hooks.PreCreate = val
+	case "post_create":
+		hooks.PostCreate = val
+	case "pre_checkout":
+		hooks.PreCheckout = val
+	case "post_checkout":
+		hooks.PostCheckout = val
+	case "pre_remove":
+		hooks.PreRemove = val
+	case "post_remove":
+		hooks.PostRemove = val
+	case "pre_pr":
+		hooks.PrePR = val
+	case "post_pr":
+		hooks.PostPR = val
+	case "pre_mr":
+		hooks.PreMR = val
+	case "post_mr":
+		hooks.PostMR = val
 	}
 }
 
