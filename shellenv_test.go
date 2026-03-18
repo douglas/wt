@@ -40,19 +40,19 @@ func TestShellenvInteractiveModeOutputCapture(t *testing.T) {
 			"EXPECTED: Remove the special case and let all commands use the same output capture logic.")
 	}
 
-	// Verify the fix: should use script(1) to provide PTY for interactive commands
-	if !strings.Contains(shellenv, "log_file=$(mktemp") {
-		t.Error("Shell function must use a log file to capture output")
+	// Verify the fix: uses simple command substitution to capture output
+	if !strings.Contains(shellenv, "output=$(command wt") {
+		t.Error("Shell function must capture output via command substitution")
 	}
 
-	// Verify the fix: should extract cd_path from log file
-	if !strings.Contains(shellenv, "cd_path=$(grep '^wt navigating to: ' \"$log_file\"") {
-		t.Error("Shell function must extract cd_path from navigation marker in log file")
+	// Verify the fix: should extract cd_path from output
+	if !strings.Contains(shellenv, "cd_path=$(printf") {
+		t.Error("Shell function must extract cd_path from navigation marker in output")
 	}
 
-	// Verify the fix: should use script command for PTY allocation
-	if !strings.Contains(shellenv, "script -q") {
-		t.Error("Shell function must use script command to allocate PTY for interactive prompts")
+	// Verify no script(1)/PTY complexity remains
+	if strings.Contains(shellenv, "script -q") {
+		t.Error("Shell function must not use script(1) for PTY allocation")
 	}
 }
 
@@ -161,11 +161,9 @@ func TestShellenvCompletionRemoveUsesWorktreeList(t *testing.T) {
 	}
 }
 
-// TestShellenvBypassesWrapperForShellenv ensures `wt shellenv` itself does not
-// go through the PTY/script wrapper. If it does, process substitution like
-// `source <(wt shellenv)` can include CR bytes and break zsh parsing when a
-// session re-sources shellenv.
-func TestShellenvBypassesWrapperForShellenv(t *testing.T) {
+// TestShellenvSimpleWrapper ensures the shell wrapper uses simple command
+// substitution without PTY/script(1) complexity.
+func TestShellenvSimpleWrapper(t *testing.T) {
 	cmd := exec.Command("go", "run", ".", "shellenv")
 	output, err := cmd.Output()
 	if err != nil {
@@ -173,11 +171,13 @@ func TestShellenvBypassesWrapperForShellenv(t *testing.T) {
 	}
 	shellenv := string(output)
 
-	if !strings.Contains(shellenv, `if [ "$1" = "shellenv" ]; then`) {
-		t.Fatal("shellenv wrapper must bypass PTY handling for 'wt shellenv'")
+	// Must use simple command substitution
+	if !strings.Contains(shellenv, `output=$(command wt "$@")`) {
+		t.Fatal("shell wrapper must use command substitution to capture output")
 	}
 
-	if !strings.Contains(shellenv, `command wt "$@"`) {
-		t.Fatal("shellenv bypass must call binary directly using 'command wt \"$@\"'")
+	// Must not use script(1) or temp files
+	if strings.Contains(shellenv, "script -q") || strings.Contains(shellenv, "mktemp") {
+		t.Fatal("shell wrapper must not use script(1) or temp files")
 	}
 }

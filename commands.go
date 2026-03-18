@@ -6,7 +6,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
 
@@ -38,11 +37,7 @@ var checkoutCmd = &cobra.Command{
 				return fmt.Errorf("no available branches to checkout")
 			}
 
-			prompt := promptui.Select{
-				Label: "Select branch to checkout",
-				Items: branches,
-			}
-			_, result, err := prompt.Run()
+			_, result, err := selectItem("Select branch to checkout", branches)
 			if err != nil {
 				return fmt.Errorf("selection cancelled")
 			}
@@ -220,11 +215,7 @@ Examples:
 				return fmt.Errorf("no open PRs found")
 			}
 
-			prompt := promptui.Select{
-				Label: "Select Pull Request",
-				Items: labels,
-			}
-			idx, _, err := prompt.Run()
+			idx, _, err := selectItem("Select Pull Request", labels)
 			if err != nil {
 				return fmt.Errorf("selection cancelled")
 			}
@@ -267,11 +258,7 @@ Examples:
 				return fmt.Errorf("no open MRs found")
 			}
 
-			prompt := promptui.Select{
-				Label: "Select Merge Request",
-				Items: labels,
-			}
-			idx, _, err := prompt.Run()
+			idx, _, err := selectItem("Select Merge Request", labels)
 			if err != nil {
 				return fmt.Errorf("selection cancelled")
 			}
@@ -329,11 +316,7 @@ var removeCmd = &cobra.Command{
 				return fmt.Errorf("no worktrees to remove")
 			}
 
-			prompt := promptui.Select{
-				Label: "Select worktree to remove",
-				Items: branches,
-			}
-			_, result, err := prompt.Run()
+			_, result, err := selectItem("Select worktree to remove", branches)
 			if err != nil {
 				return fmt.Errorf("selection cancelled")
 			}
@@ -505,12 +488,8 @@ Examples:
 
 			// If not force mode, ask for confirmation
 			if !cleanupForce {
-				prompt := promptui.Prompt{
-					Label:     fmt.Sprintf("Remove worktree for merged branch '%s'", branch),
-					IsConfirm: true,
-				}
-				_, err := prompt.Run()
-				if err != nil {
+				ok, err := confirmPrompt(fmt.Sprintf("Remove worktree for merged branch '%s'?", branch))
+				if err != nil || !ok {
 					fmt.Printf("  Skipped: %s\n", branch)
 					skipped++
 					continue
@@ -894,14 +873,7 @@ Register-ArgumentCompleter -CommandName wt -ScriptBlock {
 		}
 
 		// Bash/Zsh integration for Unix systems
-		fmt.Print(`wt() {
-    # Avoid wrapping shellenv generation itself through script(1)
-    # to prevent control characters in process substitution output.
-    if [ "$1" = "shellenv" ]; then
-        command wt "$@"
-        return $?
-    fi
-
+		os.Stdout.WriteString(`wt() {
     # In JSON mode, keep stdout machine-readable and skip auto-navigation.
     case " $* " in
         *" --format json "*|*" --format=json "*)
@@ -910,26 +882,11 @@ Register-ArgumentCompleter -CommandName wt -ScriptBlock {
             ;;
     esac
 
-    # Use script(1) to provide a PTY for interactive commands (e.g., promptui menus)
-    # Command substitution $(command wt) doesn't allocate a TTY, which breaks interactive prompts
-    local log_file exit_code cd_path
-    log_file=$(mktemp -t wt.XXXXXX)
-
-    # Detect OS to use correct script syntax (macOS vs Linux)
-    if [ "$(uname)" = "Darwin" ]; then
-        # macOS: script -q file command args
-        script -q "$log_file" /bin/sh -c 'command wt "$@"' wt "$@"
-    else
-        # Linux: script -q -c "command wt $*" "$log_file"
-        script -q -c "command wt $*" "$log_file"
-    fi
+    local output exit_code cd_path
+    output=$(command wt "$@")
     exit_code=$?
-
-    # Extract the navigation marker for auto-cd
-    cd_path=$(grep '^wt navigating to: ' "$log_file" | tail -1 | sed 's/^wt navigating to: //')
-    rm -f "$log_file"
-    cd_path=${cd_path%$'\r'}
-
+    printf '%s\n' "$output"
+    cd_path=$(printf '%s\n' "$output" | grep '^wt navigating to: ' | tail -1 | sed 's/^wt navigating to: //')
     if [ $exit_code -eq 0 ] && [ -n "$cd_path" ]; then
         cd "$cd_path"
     fi
