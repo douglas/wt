@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -28,7 +27,7 @@ type worktreeListEntry struct {
 }
 
 func getDefaultBase() string {
-	cmd := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
+	cmd := gitCmd.Command("symbolic-ref", "refs/remotes/origin/HEAD")
 	output, err := cmd.Output()
 	if err != nil {
 		return "main"
@@ -38,20 +37,20 @@ func getDefaultBase() string {
 }
 
 func getRepoInfo() (repoInfo, error) {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd := gitCmd.Command("rev-parse", "--show-toplevel")
 	output, err := cmd.Output()
 	var repoRoot string
 	isBare := false
 	if err == nil {
 		repoRoot = strings.TrimSpace(string(output))
 	} else {
-		cmd = exec.Command("git", "rev-parse", "--is-bare-repository")
+		cmd = gitCmd.Command("rev-parse", "--is-bare-repository")
 		output, err = cmd.Output()
 		if err != nil || strings.TrimSpace(string(output)) != "true" {
 			return repoInfo{}, fmt.Errorf("not in a git repository")
 		}
 		isBare = true
-		cmd = exec.Command("git", "rev-parse", "--absolute-git-dir")
+		cmd = gitCmd.Command("rev-parse", "--absolute-git-dir")
 		output, err = cmd.Output()
 		if err != nil {
 			return repoInfo{}, fmt.Errorf("not in a git repository")
@@ -60,7 +59,7 @@ func getRepoInfo() (repoInfo, error) {
 	}
 	repoName := ""
 	remoteURL := ""
-	cmd = exec.Command("git", "remote", "get-url", "origin")
+	cmd = gitCmd.Command("remote", "get-url", "origin")
 	output, err = cmd.Output()
 	if err == nil {
 		remoteURL = strings.TrimSpace(string(output))
@@ -70,7 +69,7 @@ func getRepoInfo() (repoInfo, error) {
 	}
 	if repoName == "" {
 		repoName = strings.TrimSuffix(filepath.Base(repoRoot), ".git")
-		if commonCmd := exec.Command("git", "rev-parse", "--git-common-dir"); commonCmd != nil {
+		if commonCmd := gitCmd.Command("rev-parse", "--git-common-dir"); commonCmd != nil {
 			if commonOutput, commonErr := commonCmd.Output(); commonErr == nil {
 				commonDir := strings.TrimSpace(string(commonOutput))
 				if commonDir != "" {
@@ -133,7 +132,7 @@ func getMainWorktreePath(defaultBranch, repoName, repoRoot string, isBare bool) 
 }
 
 func worktreeExists(branch string) (string, bool) {
-	cmd := exec.Command("git", "worktree", "list")
+	cmd := gitCmd.Command("worktree", "list")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", false
@@ -155,18 +154,18 @@ func worktreeExists(branch string) (string, bool) {
 
 func branchExists(branch string) bool {
 	// Check local branch
-	cmd := exec.Command("git", "show-ref", "--verify", "--quiet", fmt.Sprintf("refs/heads/%s", branch))
+	cmd := gitCmd.Command("show-ref", "--verify", "--quiet", fmt.Sprintf("refs/heads/%s", branch))
 	if cmd.Run() == nil {
 		return true
 	}
 
 	// Check remote branch
-	cmd = exec.Command("git", "show-ref", "--verify", "--quiet", fmt.Sprintf("refs/remotes/origin/%s", branch))
+	cmd = gitCmd.Command("show-ref", "--verify", "--quiet", fmt.Sprintf("refs/remotes/origin/%s", branch))
 	return cmd.Run() == nil
 }
 
 func getWorktreeListPorcelain() ([]worktreeListEntry, error) {
-	cmd := exec.Command("git", "worktree", "list", "--porcelain")
+	cmd := gitCmd.Command("worktree", "list", "--porcelain")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -216,7 +215,7 @@ func getWorktreeListPorcelain() ([]worktreeListEntry, error) {
 
 func getAvailableBranches() ([]string, error) {
 	// Get local and remote branches
-	cmd := exec.Command("git", "branch", "-a", "--format=%(refname:short)")
+	cmd := gitCmd.Command("branch", "-a", "--format=%(refname:short)")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -258,7 +257,7 @@ func getAvailableBranches() ([]string, error) {
 }
 
 func getExistingWorktreeBranches() ([]string, error) {
-	cmd := exec.Command("git", "worktree", "list")
+	cmd := gitCmd.Command("worktree", "list")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -279,7 +278,7 @@ func getExistingWorktreeBranches() ([]string, error) {
 }
 
 func getMergedBranches(base string) ([]string, error) {
-	cmd := exec.Command("git", "branch", "--merged", base, "--format=%(refname:short)")
+	cmd := gitCmd.Command("branch", "--merged", base, "--format=%(refname:short)")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get merged branches: %w", err)

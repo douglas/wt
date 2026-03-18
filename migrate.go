@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -95,7 +94,7 @@ func buildMigratePlan(entries []parsedWorktree, force bool) ([]migrateItem, erro
 
 	plan := make([]migrateItem, 0, len(entries))
 
-	absWorktreeRoot, err := filepath.Abs(worktreeRoot)
+	absWorktreeRoot, err := filepath.Abs(appCfg.Root)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve WORKTREE_ROOT: %w", err)
 	}
@@ -347,7 +346,7 @@ func applyMigratePlan(cmd *cobra.Command, plan []migrateItem) error {
 				continue
 			}
 
-			cmd := exec.Command("git", "worktree", "move", item.From, item.To)
+			cmd := gitCmd.Command("worktree", "move", item.From, item.To)
 			if !jsonMode {
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
@@ -400,7 +399,7 @@ func movePrimaryCheckout(from, to string, force bool) error {
 		return fmt.Errorf("failed to move primary checkout from %s to %s: %w", from, to, err)
 	}
 
-	repairCmd := exec.Command("git", "-C", to, "worktree", "repair")
+	repairCmd := gitCmd.Command("-C", to, "worktree", "repair")
 	if output, err := repairCmd.CombinedOutput(); err != nil {
 		trimmed := strings.TrimSpace(string(output))
 		if trimmed != "" {

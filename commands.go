@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 
@@ -89,7 +88,7 @@ var checkoutCmd = &cobra.Command{
 		}
 
 		// Create worktree
-		gitCmd := exec.Command("git", "worktree", "add", path, branch)
+		gitCmd := gitCmd.Command("worktree", "add", path, branch)
 		if !isJSONOutput() {
 			gitCmd.Stdout = os.Stdout
 			gitCmd.Stderr = os.Stderr
@@ -162,7 +161,7 @@ var createCmd = &cobra.Command{
 		}
 
 		// Create new branch and worktree
-		gitCmd := exec.Command("git", "worktree", "add", path, "-b", branch, base)
+		gitCmd := gitCmd.Command("worktree", "add", path, "-b", branch, base)
 		if !isJSONOutput() {
 			gitCmd.Stdout = os.Stdout
 			gitCmd.Stderr = os.Stderr
@@ -298,7 +297,7 @@ var listCmd = &cobra.Command{
 			return emitJSONSuccess(cmd, map[string]any{"worktrees": entries})
 		}
 
-		gitCmd := exec.Command("git", "worktree", "list")
+		gitCmd := gitCmd.Command("worktree", "list")
 		gitCmd.Stdout = os.Stdout
 		gitCmd.Stderr = os.Stderr
 		if err := gitCmd.Run(); err != nil {
@@ -364,7 +363,7 @@ var removeCmd = &cobra.Command{
 		// Find the main worktree path (for cd after removal)
 		var mainWorktreePath string
 		if inRemovedWorktree {
-			listCmd := exec.Command("git", "worktree", "list")
+			listCmd := gitCmd.Command("worktree", "list")
 			output, err := listCmd.Output()
 			if err == nil {
 				lines := strings.Split(string(output), "\n")
@@ -384,7 +383,7 @@ var removeCmd = &cobra.Command{
 		}
 		gitArgs = append(gitArgs, existingPath)
 
-		gitCmd := exec.Command("git", gitArgs...)
+		gitCmd := gitCmd.Command(gitArgs...)
 		if !jsonMode {
 			gitCmd.Stdout = os.Stdout
 			gitCmd.Stderr = os.Stderr
@@ -519,7 +518,7 @@ Examples:
 			}
 
 			// Remove the worktree
-			gitCmd := exec.Command("git", "worktree", "remove", existingPath)
+			gitCmd := gitCmd.Command("worktree", "remove", existingPath)
 			if !jsonMode {
 				gitCmd.Stdout = os.Stdout
 				gitCmd.Stderr = os.Stderr
@@ -547,7 +546,7 @@ Examples:
 		}
 
 		// Run prune at the end
-		pruneGitCmd := exec.Command("git", "worktree", "prune")
+		pruneGitCmd := gitCmd.Command("worktree", "prune")
 		_ = pruneGitCmd.Run()
 
 		if jsonMode {
@@ -563,7 +562,7 @@ var pruneCmd = &cobra.Command{
 	Use:   "prune",
 	Short: "Remove worktree administrative files",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		gitCmd := exec.Command("git", "worktree", "prune")
+		gitCmd := gitCmd.Command("worktree", "prune")
 		if !isJSONOutput() {
 			gitCmd.Stdout = os.Stdout
 			gitCmd.Stderr = os.Stderr
@@ -588,39 +587,39 @@ var infoCmd = &cobra.Command{
 		jsonMode := isJSONOutput()
 		pattern, err := resolveWorktreePattern()
 		if err != nil {
-			pattern = worktreePattern
+			pattern = appCfg.Pattern
 			if pattern == "" {
 				pattern = "unknown"
 			}
 		}
 
 		configStatus := "not found, using defaults"
-		if configFileFound {
+		if appCfg.ConfigFileFound {
 			configStatus = "found"
 		}
 
 		hooks := map[string][]string{
-			"pre_create":    worktreeHooks.PreCreate,
-			"post_create":   worktreeHooks.PostCreate,
-			"pre_checkout":  worktreeHooks.PreCheckout,
-			"post_checkout": worktreeHooks.PostCheckout,
-			"pre_remove":    worktreeHooks.PreRemove,
-			"post_remove":   worktreeHooks.PostRemove,
-			"pre_pr":        worktreeHooks.PrePR,
-			"post_pr":       worktreeHooks.PostPR,
-			"pre_mr":        worktreeHooks.PreMR,
-			"post_mr":       worktreeHooks.PostMR,
+			"pre_create":    appCfg.Hooks.PreCreate,
+			"post_create":   appCfg.Hooks.PostCreate,
+			"pre_checkout":  appCfg.Hooks.PreCheckout,
+			"post_checkout": appCfg.Hooks.PostCheckout,
+			"pre_remove":    appCfg.Hooks.PreRemove,
+			"post_remove":   appCfg.Hooks.PostRemove,
+			"pre_pr":        appCfg.Hooks.PrePR,
+			"post_pr":       appCfg.Hooks.PostPR,
+			"pre_mr":        appCfg.Hooks.PreMR,
+			"post_mr":       appCfg.Hooks.PostMR,
 		}
 
 		if jsonMode {
 			return emitJSONSuccess(cmd, map[string]any{
 				"config": map[string]string{
-					"path":      configFilePath,
+					"path":      appCfg.ConfigFilePath,
 					"status":    configStatus,
-					"strategy":  worktreeStrategy,
+					"strategy":  appCfg.Strategy,
 					"pattern":   pattern,
-					"root":      worktreeRoot,
-					"separator": worktreeSeparator,
+					"root":      appCfg.Root,
+					"separator": appCfg.Separator,
 				},
 				"strategies": []map[string]string{
 					{"name": "global", "pattern": "{.worktreeRoot}/{.repo.Name}/{.branch}"},
@@ -657,23 +656,23 @@ Note: The separator setting controls how "/" and "\" in value variables are repl
       Default "/" preserves slashes (nested dirs). Set to "-" or "_" for flat paths.
       Path variables ({.repo.Main}, {.worktreeRoot}) are never transformed.
 Note: {.env.VARNAME} accesses the environment variable VARNAME (e.g. {.env.HOME}).
-`, configFilePath, configStatus, worktreeStrategy, pattern, worktreeRoot, worktreeSeparator)
+`, appCfg.ConfigFilePath, configStatus, appCfg.Strategy, pattern, appCfg.Root, appCfg.Separator)
 
 		// Show configured hooks
 		hookNames := []struct {
 			name  string
 			hooks []string
 		}{
-			{"pre_create", worktreeHooks.PreCreate},
-			{"post_create", worktreeHooks.PostCreate},
-			{"pre_checkout", worktreeHooks.PreCheckout},
-			{"post_checkout", worktreeHooks.PostCheckout},
-			{"pre_remove", worktreeHooks.PreRemove},
-			{"post_remove", worktreeHooks.PostRemove},
-			{"pre_pr", worktreeHooks.PrePR},
-			{"post_pr", worktreeHooks.PostPR},
-			{"pre_mr", worktreeHooks.PreMR},
-			{"post_mr", worktreeHooks.PostMR},
+			{"pre_create", appCfg.Hooks.PreCreate},
+			{"post_create", appCfg.Hooks.PostCreate},
+			{"pre_checkout", appCfg.Hooks.PreCheckout},
+			{"post_checkout", appCfg.Hooks.PostCheckout},
+			{"pre_remove", appCfg.Hooks.PreRemove},
+			{"post_remove", appCfg.Hooks.PostRemove},
+			{"pre_pr", appCfg.Hooks.PrePR},
+			{"post_pr", appCfg.Hooks.PostPR},
+			{"pre_mr", appCfg.Hooks.PreMR},
+			{"post_mr", appCfg.Hooks.PostMR},
 		}
 		hasHooks := false
 		for _, h := range hookNames {
@@ -734,31 +733,31 @@ var configShowCmd = &cobra.Command{
 		pattern := configShowPatternValue()
 
 		configStatus := "not found"
-		if configFileFound {
+		if appCfg.ConfigFileFound {
 			configStatus = "found"
 		}
 
 		if isJSONOutput() {
 			return emitJSONSuccess(cmd, map[string]any{
 				"config_file": map[string]string{
-					"path":   configFilePath,
+					"path":   appCfg.ConfigFilePath,
 					"status": configStatus,
 				},
 				"effective": map[string]any{
-					"root":      map[string]string{"value": worktreeRoot, "source": configSources.Root},
-					"strategy":  map[string]string{"value": worktreeStrategy, "source": configSources.Strategy},
-					"pattern":   map[string]string{"value": pattern, "source": configSources.Pattern},
-					"separator": map[string]string{"value": worktreeSeparator, "source": configSources.Separator},
+					"root":      map[string]string{"value": appCfg.Root, "source": appCfg.ConfigSources.Root},
+					"strategy":  map[string]string{"value": appCfg.Strategy, "source": appCfg.ConfigSources.Strategy},
+					"pattern":   map[string]string{"value": pattern, "source": appCfg.ConfigSources.Pattern},
+					"separator": map[string]string{"value": appCfg.Separator, "source": appCfg.ConfigSources.Separator},
 				},
 			})
 		}
 
-		fmt.Printf("Config file: %s (%s)\n\n", configFilePath, configStatus)
+		fmt.Printf("Config file: %s (%s)\n\n", appCfg.ConfigFilePath, configStatus)
 		fmt.Printf("Effective configuration:\n")
-		fmt.Printf("  %-10s = %-40s (%s)\n", "root", worktreeRoot, configSources.Root)
-		fmt.Printf("  %-10s = %-40s (%s)\n", "strategy", worktreeStrategy, configSources.Strategy)
-		fmt.Printf("  %-10s = %-40s (%s)\n", "pattern", pattern, configSources.Pattern)
-		fmt.Printf("  %-10s = %-40s (%s)\n", "separator", fmt.Sprintf("%q", worktreeSeparator), configSources.Separator)
+		fmt.Printf("  %-10s = %-40s (%s)\n", "root", appCfg.Root, appCfg.ConfigSources.Root)
+		fmt.Printf("  %-10s = %-40s (%s)\n", "strategy", appCfg.Strategy, appCfg.ConfigSources.Strategy)
+		fmt.Printf("  %-10s = %-40s (%s)\n", "pattern", pattern, appCfg.ConfigSources.Pattern)
+		fmt.Printf("  %-10s = %-40s (%s)\n", "separator", fmt.Sprintf("%q", appCfg.Separator), appCfg.ConfigSources.Separator)
 		return nil
 	},
 }

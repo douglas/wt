@@ -258,32 +258,32 @@ func checkoutPROrMR(cmd *cobra.Command, input string, remoteType RemoteType) err
 	}
 
 	// Try fetching the branch directly from origin
-	fetchCmd := exec.Command("git", "fetch", "origin", branch)
+	fetchCmd := gitCmd.Command("fetch", "origin", branch)
 	fetchCmd.Stderr = os.Stderr
 	if err := fetchCmd.Run(); err != nil {
 		// Fallback: fetch via PR/MR refspec (e.g. for fork PRs)
-		fallbackCmd := exec.Command("git", "fetch", "origin", fmt.Sprintf("%s:%s", refSpec, branch))
+		fallbackCmd := gitCmd.Command("fetch", "origin", fmt.Sprintf("%s:%s", refSpec, branch))
 		fallbackCmd.Stderr = os.Stderr
 		_ = fallbackCmd.Run()
 	}
 
 	// Create worktree — prefer the remote-tracking branch, fall back to local
-	var gitCmd *exec.Cmd
+	var addCmd *exec.Cmd
 	if branchExists(branch) {
-		gitCmd = exec.Command("git", "worktree", "add", path, branch)
+		addCmd = gitCmd.Command("worktree", "add", path, branch)
 	} else {
-		gitCmd = exec.Command("git", "worktree", "add", path, "-b", branch, fmt.Sprintf("origin/%s", branch))
+		addCmd = gitCmd.Command("worktree", "add", path, "-b", branch, fmt.Sprintf("origin/%s", branch))
 	}
 	if !jsonMode {
-		gitCmd.Stdout = os.Stdout
-		gitCmd.Stderr = os.Stderr
+		addCmd.Stdout = os.Stdout
+		addCmd.Stderr = os.Stderr
 	}
-	if err := gitCmd.Run(); err != nil {
+	if err := addCmd.Run(); err != nil {
 		return fmt.Errorf("failed to create worktree: %w", err)
 	}
 
 	// Ensure upstream tracking is set (best-effort, may fail for fork PRs)
-	upstreamCmd := exec.Command("git", "branch", "--set-upstream-to",
+	upstreamCmd := gitCmd.Command("branch", "--set-upstream-to",
 		fmt.Sprintf("origin/%s", branch), branch)
 	_ = upstreamCmd.Run()
 
