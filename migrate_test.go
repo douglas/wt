@@ -295,3 +295,318 @@ func TestMigrateJSONOutput(t *testing.T) {
 		t.Fatalf("expected migrate json migrated > 0, got %d", payload.Data.Migrated)
 	}
 }
+
+func TestDetectTargetState(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Run("missing path", func(t *testing.T) {
+		state, err := detectTargetState(filepath.Join(tmpDir, "does-not-exist"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if state != targetMissing {
+			t.Errorf("detectTargetState() = %d, want targetMissing (%d)", state, targetMissing)
+		}
+	})
+
+	t.Run("file target", func(t *testing.T) {
+		f := filepath.Join(tmpDir, "afile")
+		if err := os.WriteFile(f, []byte("data"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		state, err := detectTargetState(f)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if state != targetFile {
+			t.Errorf("detectTargetState() = %d, want targetFile (%d)", state, targetFile)
+		}
+	})
+
+	t.Run("empty dir", func(t *testing.T) {
+		d := filepath.Join(tmpDir, "emptydir")
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		state, err := detectTargetState(d)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if state != targetDirEmpty {
+			t.Errorf("detectTargetState() = %d, want targetDirEmpty (%d)", state, targetDirEmpty)
+		}
+	})
+
+	t.Run("non-empty dir", func(t *testing.T) {
+		d := filepath.Join(tmpDir, "fulldir")
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "file.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		state, err := detectTargetState(d)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if state != targetDirNonEmpty {
+			t.Errorf("detectTargetState() = %d, want targetDirNonEmpty (%d)", state, targetDirNonEmpty)
+		}
+	})
+}
+
+func TestIsPathWithinRoot(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		root string
+		want bool
+	}{
+		{
+			name: "child path within root",
+			path: "/a/b/c",
+			root: "/a/b",
+			want: true,
+		},
+		{
+			name: "same path",
+			path: "/a/b",
+			root: "/a/b",
+			want: true,
+		},
+		{
+			name: "sibling not within root",
+			path: "/a/c",
+			root: "/a/b",
+			want: false,
+		},
+		{
+			name: "parent not within child",
+			path: "/a",
+			root: "/a/b",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isPathWithinRoot(tt.path, tt.root)
+			if got != tt.want {
+				t.Errorf("isPathWithinRoot(%q, %q) = %v, want %v",
+					tt.path, tt.root, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCanonicalExistingPath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Run("existing absolute path", func(t *testing.T) {
+		got := canonicalExistingPath(tmpDir)
+		if !filepath.IsAbs(got) {
+			t.Errorf("canonicalExistingPath(%q) = %q, expected absolute", tmpDir, got)
+		}
+		if got != filepath.Clean(tmpDir) && got != tmpDir {
+			// May differ by symlink resolution; both should be clean absolute
+			if !filepath.IsAbs(got) {
+				t.Errorf("expected absolute path, got %q", got)
+			}
+		}
+	})
+
+	t.Run("relative path within existing dir", func(t *testing.T) {
+		// canonicalExistingPath uses filepath.Abs which resolves relative to cwd
+		got := canonicalExistingPath(".")
+		if !filepath.IsAbs(got) {
+			t.Errorf("canonicalExistingPath(\".\") = %q, expected absolute", got)
+		}
+	})
+}
+
+func TestResolvePrimaryCheckoutTarget(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot determine home directory")
+	}
+
+	tests := []struct {
+		name string
+		info repoInfo
+		want string
+	}{
+		{
+			name: "with owner",
+			info: repoInfo{Owner: "acme", Name: "repo"},
+			want: filepath.Join(home, "src", "acme", "repo"),
+		},
+		{
+			name: "without owner",
+			info: repoInfo{Name: "repo"},
+			want: filepath.Join(home, "src", "repo"),
+		},
+		{
+			name: "with slashed owner",
+			info: repoInfo{Owner: "/org/", Name: "repo"},
+			want: filepath.Join(home, "src", "org", "repo"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolvePrimaryCheckoutTarget(tt.info)
+			if got != tt.want {
+				t.Errorf("resolvePrimaryCheckoutTarget(%+v) = %q, want %q",
+					tt.info, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrepareMigrateTarget(t *testing.T) {
+	t.Run("missing target creates parent", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		target := filepath.Join(tmpDir, "sub", "target")
+		if err := prepareMigrateTarget(target, false); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		parent := filepath.Dir(target)
+		if _, err := os.Stat(parent); err != nil {
+			t.Errorf("expected parent dir to exist: %v", err)
+		}
+	})
+
+	t.Run("empty dir removed", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		target := filepath.Join(tmpDir, "emptydir")
+		if err := os.Mkdir(target, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := prepareMigrateTarget(target, false); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, err := os.Stat(target); !os.IsNotExist(err) {
+			t.Error("expected empty dir to be removed")
+		}
+	})
+
+	t.Run("non-empty dir without force errors", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		target := filepath.Join(tmpDir, "fulldir")
+		if err := os.Mkdir(target, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(target, "f.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		err := prepareMigrateTarget(target, false)
+		if err == nil {
+			t.Fatal("expected error for non-empty dir without force")
+		}
+		if !strings.Contains(err.Error(), "non-empty") {
+			t.Errorf("error should mention non-empty: %v", err)
+		}
+	})
+
+	t.Run("non-empty dir with force removed", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		target := filepath.Join(tmpDir, "fulldir2")
+		if err := os.Mkdir(target, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(target, "f.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := prepareMigrateTarget(target, true); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, err := os.Stat(target); !os.IsNotExist(err) {
+			t.Error("expected non-empty dir to be removed with force")
+		}
+	})
+
+	t.Run("file without force errors", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		target := filepath.Join(tmpDir, "afile")
+		if err := os.WriteFile(target, []byte("data"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		err := prepareMigrateTarget(target, false)
+		if err == nil {
+			t.Fatal("expected error for file target without force")
+		}
+		if !strings.Contains(err.Error(), "file") {
+			t.Errorf("error should mention file: %v", err)
+		}
+	})
+
+	t.Run("file with force removed", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		target := filepath.Join(tmpDir, "afile2")
+		if err := os.WriteFile(target, []byte("data"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := prepareMigrateTarget(target, true); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, err := os.Stat(target); !os.IsNotExist(err) {
+			t.Error("expected file to be removed with force")
+		}
+	})
+}
+
+func TestListParsedWorktrees(t *testing.T) {
+	mock := withMockGit(t)
+
+	porcelainOutput := strings.Join([]string{
+		"worktree /home/user/repo",
+		"HEAD abc1234567890",
+		"branch refs/heads/main",
+		"",
+		"worktree /tmp/wt/feature",
+		"HEAD def5678901234",
+		"branch refs/heads/feature",
+		"",
+		"worktree /tmp/wt/detached",
+		"HEAD 1111111111111",
+		"detached",
+		"",
+	}, "\n")
+	mock.outputs["worktree list --porcelain"] = []byte(porcelainOutput)
+
+	entries, err := listParsedWorktrees()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+
+	// First entry should be marked as Main
+	if !entries[0].Main {
+		t.Error("expected first entry to be Main")
+	}
+	if entries[0].Path != "/home/user/repo" {
+		t.Errorf("entries[0].Path = %q, want /home/user/repo", entries[0].Path)
+	}
+	if entries[0].Branch != "main" {
+		t.Errorf("entries[0].Branch = %q, want main", entries[0].Branch)
+	}
+
+	// Second entry
+	if entries[1].Main {
+		t.Error("expected second entry not to be Main")
+	}
+	if entries[1].Branch != "feature" {
+		t.Errorf("entries[1].Branch = %q, want feature", entries[1].Branch)
+	}
+
+	// Third entry: detached
+	if !entries[2].Detached {
+		t.Error("expected third entry to be Detached")
+	}
+	if entries[2].Main {
+		t.Error("expected third entry not to be Main")
+	}
+}

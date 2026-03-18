@@ -450,3 +450,42 @@ func TestInitJSONOutput(t *testing.T) {
 		t.Fatal("expected config_path to be populated")
 	}
 }
+
+func TestGetShellConfigPathBash(t *testing.T) {
+	tmpDir := t.TempDir()
+	bashrc := filepath.Join(tmpDir, ".bashrc")
+	if err := os.WriteFile(bashrc, []byte("# test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	got := getShellConfigPath("bash")
+	if got != bashrc {
+		t.Errorf("getShellConfigPath(\"bash\") = %q, want %q", got, bashrc)
+	}
+}
+
+func TestGetShellConfigPathUnknown(t *testing.T) {
+	got := getShellConfigPath("fish")
+	if got != "" {
+		t.Errorf("getShellConfigPath(\"fish\") = %q, want empty string", got)
+	}
+}
+
+func TestGetShellConfigPathPowershell(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("PROFILE", "")
+
+	got := getShellConfigPath("powershell")
+	if runtime.GOOS != "windows" {
+		want := filepath.Join(tmpDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1")
+		if got != want {
+			t.Errorf("getShellConfigPath(\"powershell\") = %q, want %q", got, want)
+		}
+	}
+	if got == "" {
+		t.Error("getShellConfigPath(\"powershell\") should not return empty string")
+	}
+}

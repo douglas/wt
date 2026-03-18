@@ -544,3 +544,180 @@ func TestConfigShowPatternParityBetweenTextAndJSON_Config(t *testing.T) {
 		})
 	}
 }
+
+func TestParseStringArray(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "multiple elements",
+			input: `["a", "b", "c"]`,
+			want:  []string{"a", "b", "c"},
+		},
+		{
+			name:  "single element",
+			input: `["single"]`,
+			want:  []string{"single"},
+		},
+		{
+			name:  "empty array",
+			input: `[]`,
+			want:  nil,
+		},
+		{
+			name:  "empty string no brackets",
+			input: ``,
+			want:  nil,
+		},
+		{
+			name:  "inner quotes preserved",
+			input: `["quoted \"value\""]`,
+			want:  []string{`quoted \"value\"`},
+		},
+		{
+			name:  "trimmed around but not inside quotes",
+			input: `[  "  spaced  "  ]`,
+			want:  []string{"  spaced  "},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseStringArray(tt.input)
+			if len(got) != len(tt.want) {
+				t.Fatalf("parseStringArray(%q) = %v (len %d), want %v (len %d)",
+					tt.input, got, len(got), tt.want, len(tt.want))
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("parseStringArray(%q)[%d] = %q, want %q",
+						tt.input, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestSetHookField(t *testing.T) {
+	tests := []struct {
+		name    string
+		section string
+		key     string
+		val     []string
+		check   func(t *testing.T, h Hooks)
+	}{
+		{
+			name:    "hooks pre_create",
+			section: "hooks",
+			key:     "pre_create",
+			val:     []string{"cmd1"},
+			check: func(t *testing.T, h Hooks) {
+				t.Helper()
+				if len(h.PreCreate) != 1 || h.PreCreate[0] != "cmd1" {
+					t.Errorf("PreCreate = %v, want [cmd1]", h.PreCreate)
+				}
+			},
+		},
+		{
+			name:    "hooks post_checkout",
+			section: "hooks",
+			key:     "post_checkout",
+			val:     []string{"cmd2"},
+			check: func(t *testing.T, h Hooks) {
+				t.Helper()
+				if len(h.PostCheckout) != 1 || h.PostCheckout[0] != "cmd2" {
+					t.Errorf("PostCheckout = %v, want [cmd2]", h.PostCheckout)
+				}
+			},
+		},
+		{
+			name:    "hooks post_mr",
+			section: "hooks",
+			key:     "post_mr",
+			val:     []string{"cmd3"},
+			check: func(t *testing.T, h Hooks) {
+				t.Helper()
+				if len(h.PostMR) != 1 || h.PostMR[0] != "cmd3" {
+					t.Errorf("PostMR = %v, want [cmd3]", h.PostMR)
+				}
+			},
+		},
+		{
+			name:    "wrong section ignored",
+			section: "other",
+			key:     "pre_create",
+			val:     []string{"cmd4"},
+			check: func(t *testing.T, h Hooks) {
+				t.Helper()
+				if h.PreCreate != nil {
+					t.Errorf("PreCreate = %v, want nil (wrong section)", h.PreCreate)
+				}
+			},
+		},
+		{
+			name:    "unknown key ignored",
+			section: "hooks",
+			key:     "unknown_key",
+			val:     []string{"cmd5"},
+			check: func(t *testing.T, h Hooks) {
+				t.Helper()
+				// All fields should remain zero-value
+				if h.PreCreate != nil || h.PostCreate != nil ||
+					h.PreCheckout != nil || h.PostCheckout != nil ||
+					h.PreRemove != nil || h.PostRemove != nil ||
+					h.PrePR != nil || h.PostPR != nil ||
+					h.PreMR != nil || h.PostMR != nil {
+					t.Error("hooks should be unchanged for unknown key")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var hooks Hooks
+			setHookField(&hooks, tt.section, tt.key, tt.val)
+			tt.check(t, hooks)
+		})
+	}
+}
+
+func TestUnquoteStringEdgeCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "empty content between quotes",
+			input: `""`,
+			want:  ``,
+		},
+		{
+			name:  "single quote char returned as-is",
+			input: `"`,
+			want:  `"`,
+		},
+		{
+			name:  "no quotes",
+			input: `abc`,
+			want:  `abc`,
+		},
+		{
+			name:  "single quotes not handled",
+			input: `'single'`,
+			want:  `'single'`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := unquoteString(tt.input)
+			if got != tt.want {
+				t.Errorf("unquoteString(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

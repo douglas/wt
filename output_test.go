@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -154,5 +155,77 @@ func TestConfigHelpUsesJSONFormat(t *testing.T) {
 	}
 	if !strings.Contains(out, `"command":"wt config"`) {
 		t.Fatalf("expected wt config command in JSON, got: %s", out)
+	}
+}
+
+func TestEmitJSONError(t *testing.T) {
+	original := appCfg.OutputFormat
+	t.Cleanup(func() { appCfg.OutputFormat = original })
+	appCfg.OutputFormat = "json"
+
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = origStdout })
+
+	err = emitJSONError(rootCmd, fmt.Errorf("something broke"))
+	if err != nil {
+		t.Fatalf("emitJSONError() unexpected error: %v", err)
+	}
+
+	_ = w.Close()
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("failed to read stdout: %v", err)
+	}
+
+	var payload struct {
+		OK      bool   `json:"ok"`
+		Command string `json:"command"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode json: %v", err)
+	}
+	if payload.OK {
+		t.Fatalf("expected ok=false, got true")
+	}
+	if payload.Command != "wt" {
+		t.Fatalf("expected command wt, got %q", payload.Command)
+	}
+	if payload.Error != "something broke" {
+		t.Fatalf("expected error='something broke', got %q", payload.Error)
+	}
+}
+
+func TestEmitJSONErrorTextMode(t *testing.T) {
+	original := appCfg.OutputFormat
+	t.Cleanup(func() { appCfg.OutputFormat = original })
+	appCfg.OutputFormat = "text"
+
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = origStdout })
+
+	err = emitJSONError(rootCmd, fmt.Errorf("something broke"))
+	if err != nil {
+		t.Fatalf("emitJSONError() unexpected error: %v", err)
+	}
+
+	_ = w.Close()
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("failed to read stdout: %v", err)
+	}
+
+	if strings.TrimSpace(buf.String()) != "" {
+		t.Fatalf("expected no output in text mode, got %q", buf.String())
 	}
 }
