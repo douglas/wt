@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 
@@ -101,7 +100,7 @@ func parsePROutput(output string) ([]string, []string) {
 }
 
 func getOpenPRs() ([]string, []string, error) {
-	cmd := exec.Command("gh", "pr", "list", "--json", "number,title", "--jq", ".[] | \"\\(.number)\\t\\(.title)\"")
+	cmd := extCmd.Command("gh", "pr", "list", "--json", "number,title", "--jq", ".[] | \"\\(.number)\\t\\(.title)\"")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, nil, err
@@ -126,7 +125,7 @@ func parseMROutput(output string) ([]string, []string) {
 }
 
 func getOpenMRs() ([]string, []string, error) {
-	cmd := exec.Command("glab", "mr", "list")
+	cmd := extCmd.Command("glab", "mr", "list")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, nil, err
@@ -168,22 +167,23 @@ func parseGitLabBranchName(jsonOutput string) (string, error) {
 func getPRBranchName(prNumber string, remoteType RemoteType) (string, error) {
 	switch remoteType {
 	case RemoteGitHub:
-		cmd := exec.Command("gh", "pr", "view", prNumber, "--json", "headRefName")
+		cmd := extCmd.Command("gh", "pr", "view", prNumber, "--json", "headRefName")
 		output, err := cmd.Output()
 		if err != nil {
 			return "", fmt.Errorf("failed to get PR branch name: %w", err)
 		}
 		return parseGitHubBranchName(string(output))
 	case RemoteGitLab:
-		cmd := exec.Command("glab", "mr", "view", prNumber, "--output", "json")
+		cmd := extCmd.Command("glab", "mr", "view", prNumber, "--output", "json")
 		output, err := cmd.Output()
 		if err != nil {
 			return "", fmt.Errorf("failed to get MR branch name: %w", err)
 		}
 		return parseGitLabBranchName(string(output))
-	default:
+	case RemoteUnknown:
 		return "", fmt.Errorf("invalid remote type")
 	}
+	return "", fmt.Errorf("invalid remote type")
 }
 
 func checkoutPROrMR(cmd *cobra.Command, input string, remoteType RemoteType) error {
@@ -199,16 +199,16 @@ func checkoutPROrMR(cmd *cobra.Command, input string, remoteType RemoteType) err
 	case RemoteGitHub:
 		refSpec = fmt.Sprintf("pull/%s/head", prNumber)
 		prefix = "pr"
-		if _, err := exec.LookPath("gh"); err != nil {
+		if _, err := lookPathFunc("gh"); err != nil {
 			return fmt.Errorf("'gh' CLI not found. Install it from https://cli.github.com")
 		}
 	case RemoteGitLab:
 		refSpec = fmt.Sprintf("merge-requests/%s/head", prNumber)
 		prefix = "mr"
-		if _, err := exec.LookPath("glab"); err != nil {
+		if _, err := lookPathFunc("glab"); err != nil {
 			return fmt.Errorf("'glab' CLI not found. Install it from https://gitlab.com/gitlab-org/cli")
 		}
-	default:
+	case RemoteUnknown:
 		return fmt.Errorf("invalid remote type")
 	}
 
@@ -269,10 +269,8 @@ func checkoutPROrMR(cmd *cobra.Command, input string, remoteType RemoteType) err
 	}
 
 	// Create worktree — prefer the remote-tracking branch, fall back to local
-	var addCmd *exec.Cmd
-	if branchExists(branch) {
-		addCmd = gitCmd.Command("worktree", "add", path, branch)
-	} else {
+	addCmd := gitCmd.Command("worktree", "add", path, branch)
+	if !branchExists(branch) {
 		addCmd = gitCmd.Command("worktree", "add", path, "-b", branch, fmt.Sprintf("origin/%s", branch))
 	}
 	if !jsonMode {
