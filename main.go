@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// version is set at build time via -ldflags.
 var version = "dev"
 
 func init() {
@@ -37,6 +38,7 @@ func main() {
 	}
 }
 
+// rootCmd is the top-level cobra command for the wt CLI.
 var rootCmd = &cobra.Command{
 	Use:           "wt",
 	Short:         "Git worktree helper with organized directory structure",

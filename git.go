@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// repoInfo holds repository metadata resolved from git remote and worktree state.
 type repoInfo struct {
 	Main  string
 	Host  string
@@ -15,6 +16,7 @@ type repoInfo struct {
 	Name  string
 }
 
+// worktreeListEntry represents a single entry from git worktree list --porcelain.
 type worktreeListEntry struct {
 	Path     string `json:"path"`
 	HEAD     string `json:"head,omitempty"`

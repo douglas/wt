@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Command-level flag variables bound by cobra in init().
 var (
 	removeForce   bool
 	cleanupDryRun bool

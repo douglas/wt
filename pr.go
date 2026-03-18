@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// RemoteType identifies the hosting platform for PR/MR operations.
 type RemoteType int
 
 const (

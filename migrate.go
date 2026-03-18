@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// migrateAction describes what to do with a worktree during migration.
 type migrateAction string
 
 const (
@@ -17,6 +18,7 @@ const (
 	migrateActionSkip      migrateAction = "skip"
 )
 
+// parsedWorktree is a simplified worktree representation used by the migrate command.
 type parsedWorktree struct {
 	Path     string
 	Branch   string
@@ -24,6 +26,7 @@ type parsedWorktree struct {
 	Main     bool
 }
 
+// migrateItem is a single planned move/skip action in a migration plan.
 type migrateItem struct {
 	Branch  string
 	From    string
@@ -33,6 +36,7 @@ type migrateItem struct {
 	Reason  string
 }
 
+// targetState classifies the filesystem state of a migration target path.
 type targetState int
 
 const (

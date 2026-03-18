@@ -14,6 +14,7 @@ const (
 	formatJSON = "json"
 )
 
+// jsonEnvelope wraps all JSON-mode output with a uniform ok/error structure.
 type jsonEnvelope struct {
 	OK      bool   `json:"ok"`
 	Command string `json:"command"`
