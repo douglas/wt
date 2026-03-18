@@ -5,12 +5,13 @@ coverage:
   status:
     project:
       default:
-        informational: true  # Don't block PRs
-        target: auto
+        informational: true  # Don't block PRs yet — move to blocking once stable
+        target: 35%          # Current baseline ~39.7%, floor at 35%
+        threshold: 2%        # Allow 2% drop before flagging
     patch:
       default:
-        informational: true  # Don't block PRs
-        target: auto
+        informational: true  # Don't block PRs yet
+        target: 70%          # New code should be well-tested
 
 comment:
   layout: "reach, diff, flags, files"
