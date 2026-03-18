@@ -28,7 +28,7 @@ clean:
 
 # Run unit tests
 test:
-    go test -v -short ./...
+    go test -v -short -race ./...
 
 # Print shell integration that runs wt from source (for local development)
 dev-shellenv:
