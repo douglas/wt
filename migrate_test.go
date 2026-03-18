@@ -2,12 +2,228 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestApplyMigratePlan(t *testing.T) {
+	t.Run("all skipped text mode", func(t *testing.T) {
+		withMockGit(t)
+		withAppConfig(t)
+		appCfg.OutputFormat = "text"
+
+		plan := []migrateItem{
+			{Branch: "main", From: "/from/main", Primary: true, Action: migrateActionSkip, Reason: "already at target"},
+			{Branch: "feat", From: "/from/feat", Action: migrateActionSkip, Reason: "already in configured path"},
+		}
+
+		output := captureStdout(t, func() {
+			err := applyMigratePlan(migrateCmd, plan)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+
+		if !strings.Contains(output, "Skipped") {
+			t.Errorf("expected output to contain 'Skipped', got: %s", output)
+		}
+		if !strings.Contains(output, "0 moved, 2 skipped") {
+			t.Errorf("expected output to contain '0 moved, 2 skipped', got: %s", output)
+		}
+	})
+
+	t.Run("all skipped json mode", func(t *testing.T) {
+		withMockGit(t)
+		withAppConfig(t)
+		appCfg.OutputFormat = "json"
+
+		plan := []migrateItem{
+			{Branch: "main", From: "/from/main", Primary: true, Action: migrateActionSkip, Reason: "already at target"},
+			{Branch: "feat", From: "/from/feat", Action: migrateActionSkip, Reason: "already in configured path"},
+		}
+
+		output := captureStdout(t, func() {
+			err := applyMigratePlan(migrateCmd, plan)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+
+		var payload struct {
+			OK   bool `json:"ok"`
+			Data struct {
+				Skipped  int `json:"skipped"`
+				Migrated int `json:"migrated"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(output), &payload); err != nil {
+			t.Fatalf("failed to parse JSON: %v\noutput: %s", err, output)
+		}
+		if payload.Data.Skipped != 2 {
+			t.Errorf("expected skipped=2, got %d", payload.Data.Skipped)
+		}
+		if payload.Data.Migrated != 0 {
+			t.Errorf("expected migrated=0, got %d", payload.Data.Migrated)
+		}
+	})
+
+	t.Run("secondary move success text mode", func(t *testing.T) {
+		mock := withMockGit(t)
+		withAppConfig(t)
+		appCfg.OutputFormat = "text"
+
+		tmpDir := t.TempDir()
+		to := filepath.Join(tmpDir, "target", "feat")
+		plan := []migrateItem{
+			{Branch: "feat", From: "/old/feat", To: to, Action: migrateActionMove},
+		}
+
+		mock.outputs[fmt.Sprintf("worktree move /old/feat %s", to)] = []byte("")
+
+		output := captureStdout(t, func() {
+			err := applyMigratePlan(migrateCmd, plan)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+
+		if !strings.Contains(output, "Moved feat") {
+			t.Errorf("expected output to contain 'Moved feat', got: %s", output)
+		}
+		if !strings.Contains(output, "1 moved") {
+			t.Errorf("expected output to contain '1 moved', got: %s", output)
+		}
+	})
+
+	t.Run("secondary move success json mode", func(t *testing.T) {
+		mock := withMockGit(t)
+		withAppConfig(t)
+		appCfg.OutputFormat = "json"
+
+		tmpDir := t.TempDir()
+		to := filepath.Join(tmpDir, "target", "feat")
+		plan := []migrateItem{
+			{Branch: "feat", From: "/old/feat", To: to, Action: migrateActionMove},
+		}
+
+		mock.outputs[fmt.Sprintf("worktree move /old/feat %s", to)] = []byte("")
+
+		output := captureStdout(t, func() {
+			err := applyMigratePlan(migrateCmd, plan)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+
+		var payload struct {
+			OK   bool `json:"ok"`
+			Data struct {
+				Migrated int `json:"migrated"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(output), &payload); err != nil {
+			t.Fatalf("failed to parse JSON: %v\noutput: %s", err, output)
+		}
+		if payload.Data.Migrated != 1 {
+			t.Errorf("expected migrated=1, got %d", payload.Data.Migrated)
+		}
+	})
+
+	t.Run("secondary move force with non-empty target", func(t *testing.T) {
+		mock := withMockGit(t)
+		withAppConfig(t)
+		appCfg.OutputFormat = "text"
+
+		tmpDir := t.TempDir()
+		targetDir := filepath.Join(tmpDir, "occupied")
+		if err := os.MkdirAll(targetDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(targetDir, "file.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		plan := []migrateItem{
+			{Branch: "feat", From: "/old/feat", To: targetDir, Action: migrateActionMoveForce},
+		}
+
+		mock.outputs[fmt.Sprintf("worktree move /old/feat %s", targetDir)] = []byte("")
+
+		output := captureStdout(t, func() {
+			err := applyMigratePlan(migrateCmd, plan)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+
+		// The file should have been removed by prepareMigrateTarget with force
+		if _, err := os.Stat(filepath.Join(targetDir, "file.txt")); !os.IsNotExist(err) {
+			t.Error("expected file.txt to be removed by force migrate")
+		}
+		if !strings.Contains(output, "Moved feat") {
+			t.Errorf("expected output to contain 'Moved feat', got: %s", output)
+		}
+	})
+}
+
+func TestMovePrimaryCheckout(t *testing.T) {
+	t.Run("successful move", func(t *testing.T) {
+		mock := withMockGit(t)
+
+		tmpDir := t.TempDir()
+		from := filepath.Join(tmpDir, "old-checkout")
+		to := filepath.Join(tmpDir, "new-checkout")
+		if err := os.MkdirAll(from, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(from, "marker.txt"), []byte("hello"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		mock.outputs[fmt.Sprintf("-C %s worktree repair", to)] = []byte("")
+
+		err := movePrimaryCheckout(from, to, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if _, err := os.Stat(from); !os.IsNotExist(err) {
+			t.Error("expected old path to no longer exist")
+		}
+		data, err := os.ReadFile(filepath.Join(to, "marker.txt"))
+		if err != nil {
+			t.Fatalf("expected marker.txt at new path: %v", err)
+		}
+		if string(data) != "hello" {
+			t.Errorf("marker.txt content = %q, want %q", string(data), "hello")
+		}
+	})
+
+	t.Run("repair failure returns error", func(t *testing.T) {
+		mock := withMockGit(t)
+
+		tmpDir := t.TempDir()
+		from := filepath.Join(tmpDir, "old-checkout2")
+		to := filepath.Join(tmpDir, "new-checkout2")
+		if err := os.MkdirAll(from, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		mock.errors[fmt.Sprintf("-C %s worktree repair", to)] = fmt.Errorf("repair failed")
+
+		err := movePrimaryCheckout(from, to, false)
+		if err == nil {
+			t.Fatal("expected error when repair fails")
+		}
+		if !strings.Contains(err.Error(), "repair") {
+			t.Errorf("error should mention repair: %v", err)
+		}
+	})
+}
 
 func TestMigrateCommandRegistered(t *testing.T) {
 	found := false
@@ -609,4 +825,198 @@ func TestListParsedWorktrees(t *testing.T) {
 	if entries[2].Main {
 		t.Error("expected third entry not to be Main")
 	}
+}
+
+func TestBuildMigratePlan(t *testing.T) {
+	t.Run("linked worktree already at target is skipped", func(t *testing.T) {
+		mock := withMockGit(t)
+		withAppConfig(t)
+
+		tmpDir := t.TempDir()
+		worktreeRoot := filepath.Join(tmpDir, "worktrees")
+		repoRoot := filepath.Join(tmpDir, "repo")
+		appCfg.Root = worktreeRoot
+		appCfg.Strategy = "global"
+		appCfg.Pattern = ""
+		appCfg.Separator = "/"
+
+		// Mock getRepoInfo chain
+		mock.outputs["rev-parse --show-toplevel"] = []byte(repoRoot)
+		mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/myrepo.git")
+		mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+		mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+		mock.outputs["worktree list --porcelain"] = []byte(
+			"worktree " + repoRoot + "\nHEAD abc\nbranch refs/heads/main\n\n")
+
+		// The target path for "feat" with global strategy is worktreeRoot/myrepo/feat
+		targetPath := filepath.Join(worktreeRoot, "myrepo", "feat")
+
+		entries := []parsedWorktree{
+			{Path: repoRoot, Branch: "main", Main: true},
+			{Path: targetPath, Branch: "feat"},
+		}
+
+		plan, err := buildMigratePlan(entries, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if len(plan) != 2 {
+			t.Fatalf("expected 2 plan items, got %d", len(plan))
+		}
+
+		// Primary should be skipped (already outside worktreeRoot)
+		if plan[0].Action != migrateActionSkip {
+			t.Errorf("primary action = %q, want skip", plan[0].Action)
+		}
+
+		// Linked worktree already at configured path → skip
+		if plan[1].Action != migrateActionSkip {
+			t.Errorf("linked action = %q, want skip", plan[1].Action)
+		}
+		if !strings.Contains(plan[1].Reason, "already in configured path") {
+			t.Errorf("linked reason = %q, want 'already in configured path'", plan[1].Reason)
+		}
+	})
+
+	t.Run("linked worktree needs move", func(t *testing.T) {
+		mock := withMockGit(t)
+		withAppConfig(t)
+
+		tmpDir := t.TempDir()
+		worktreeRoot := filepath.Join(tmpDir, "worktrees")
+		repoRoot := filepath.Join(tmpDir, "repo")
+		appCfg.Root = worktreeRoot
+		appCfg.Strategy = "global"
+		appCfg.Pattern = ""
+		appCfg.Separator = "/"
+
+		mock.outputs["rev-parse --show-toplevel"] = []byte(repoRoot)
+		mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/myrepo.git")
+		mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+		mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+		mock.outputs["worktree list --porcelain"] = []byte(
+			"worktree " + repoRoot + "\nHEAD abc\nbranch refs/heads/main\n\n")
+
+		oldPath := filepath.Join(tmpDir, "legacy", "feat")
+
+		entries := []parsedWorktree{
+			{Path: repoRoot, Branch: "main", Main: true},
+			{Path: oldPath, Branch: "feat"},
+		}
+
+		plan, err := buildMigratePlan(entries, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Find the linked worktree item
+		var linked *migrateItem
+		for i := range plan {
+			if !plan[i].Primary {
+				linked = &plan[i]
+				break
+			}
+		}
+		if linked == nil {
+			t.Fatal("no linked worktree in plan")
+		}
+
+		if linked.Action != migrateActionMove {
+			t.Errorf("linked action = %q, want move", linked.Action)
+		}
+		expectedTo := filepath.Join(worktreeRoot, "myrepo", "feat")
+		if linked.To != expectedTo {
+			t.Errorf("linked To = %q, want %q", linked.To, expectedTo)
+		}
+	})
+
+	t.Run("detached worktree is skipped", func(t *testing.T) {
+		mock := withMockGit(t)
+		withAppConfig(t)
+
+		tmpDir := t.TempDir()
+		repoRoot := filepath.Join(tmpDir, "repo")
+		appCfg.Root = filepath.Join(tmpDir, "worktrees")
+		appCfg.Strategy = "global"
+		appCfg.Pattern = ""
+		appCfg.Separator = "/"
+
+		mock.outputs["rev-parse --show-toplevel"] = []byte(repoRoot)
+		mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/myrepo.git")
+		mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+		mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+		mock.outputs["worktree list --porcelain"] = []byte(
+			"worktree " + repoRoot + "\nHEAD abc\nbranch refs/heads/main\n\n")
+
+		entries := []parsedWorktree{
+			{Path: repoRoot, Branch: "main", Main: true},
+			{Path: "/tmp/detached", Branch: "", Detached: true},
+		}
+
+		plan, err := buildMigratePlan(entries, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		var detached *migrateItem
+		for i := range plan {
+			if plan[i].Branch == "<detached>" {
+				detached = &plan[i]
+				break
+			}
+		}
+		if detached == nil {
+			t.Fatal("no detached item in plan")
+		}
+		if detached.Action != migrateActionSkip {
+			t.Errorf("detached action = %q, want skip", detached.Action)
+		}
+		if !strings.Contains(detached.Reason, "detached") {
+			t.Errorf("detached reason = %q, want 'detached'", detached.Reason)
+		}
+	})
+
+	t.Run("primary inside worktreeRoot gets moved", func(t *testing.T) {
+		mock := withMockGit(t)
+		withAppConfig(t)
+
+		tmpDir := t.TempDir()
+		worktreeRoot := filepath.Join(tmpDir, "worktrees")
+		// Primary checkout IS inside worktreeRoot
+		primaryPath := filepath.Join(worktreeRoot, "myrepo")
+		if err := os.MkdirAll(primaryPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		appCfg.Root = worktreeRoot
+		appCfg.Strategy = "global"
+		appCfg.Pattern = ""
+		appCfg.Separator = "/"
+
+		mock.outputs["rev-parse --show-toplevel"] = []byte(primaryPath)
+		mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/myrepo.git")
+		mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+		mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+		mock.outputs["worktree list --porcelain"] = []byte(
+			"worktree " + primaryPath + "\nHEAD abc\nbranch refs/heads/main\n\n")
+
+		entries := []parsedWorktree{
+			{Path: primaryPath, Branch: "main", Main: true},
+		}
+
+		plan, err := buildMigratePlan(entries, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if len(plan) != 1 {
+			t.Fatalf("expected 1 plan item, got %d", len(plan))
+		}
+		if plan[0].Action != migrateActionMove {
+			t.Errorf("primary action = %q, want move", plan[0].Action)
+		}
+		if !plan[0].Primary {
+			t.Error("expected item to be marked as primary")
+		}
+	})
 }
