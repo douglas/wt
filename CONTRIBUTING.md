@@ -1,142 +1,55 @@
 # Contributing to wt
 
-## Development Workflow
+## Development
 
-### For External Contributors (Fork-based workflow)
+Prerequisites: Go 1.26+, [just](https://github.com/casey/just) task runner.
 
-If you don't have write access to the repository:
-
-1. **Fork the repository** on GitHub
-
-2. **Clone your fork:**
-   ```bash
-   git clone https://github.com/YOUR-USERNAME/wt.git
-   cd wt
-   ```
-
-3. **Create a feature branch:**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-4. **Make your changes and commit:**
-   ```bash
-   git add .
-   git commit -m "feat: your feature description"
-   ```
-
-5. **Push to your fork:**
-   ```bash
-   git push -u origin feature/your-feature-name
-   ```
-
-6. **Create a Pull Request** from your fork to `timvw/wt:main`
-   - Go to https://github.com/timvw/wt
-   - Click "New Pull Request"
-   - Select "compare across forks"
-   - Choose your fork and branch
-
-7. **Wait for CI to pass** and respond to any review feedback
-
-### For Maintainers (Branch-based workflow)
-
-If you have write access to the repository:
-
-1. **Create a feature branch:**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **Make your changes and commit:**
-   ```bash
-   git add .
-   git commit -m "feat: your feature description"
-   ```
-
-3. **Push the branch:**
-   ```bash
-   git push -u origin feature/your-feature-name
-   ```
-
-4. **Create a Pull Request:**
-   ```bash
-   gh pr create --title "feat: your feature" --body "Description of changes"
-   ```
-
-5. **Wait for CI to pass** - Branch protection requires all checks to pass
-
-6. **Merge the PR** when CI is green
-
-### Branch Naming Convention
-
-- `feat/description` - New features
-- `fix/description` - Bug fixes
-- `docs/description` - Documentation changes
-- `refactor/description` - Code refactoring
-- `chore/description` - Maintenance tasks
-
-### Commit Message Convention
-
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-- `feat: add interactive selection for checkout`
-- `fix: filter out invalid branch names`
-- `docs: update installation instructions`
-- `refactor: simplify branch filtering logic`
-- `chore: update dependencies`
-- `security: update vulnerable dependency`
-
-### Running Tests Locally
-
-Before pushing:
-
-```bash
-# Run tests
-go test ./...
-
-# Run linter
-golangci-lint run
-
-# Build
-go build -o bin/wt .
+```sh
+just build                    # build to bin/wt
+just install-user             # install to ~/bin
+eval "$(just dev-shellenv)"   # dev shell (runs from source)
 ```
 
-### Branch Protection
+## Testing
 
-The `main` branch is protected and requires:
-- ✅ All CI checks must pass (Test, Build, Lint, Cross Compile)
-- ✅ Branch must be up to date with main
-- ❌ No direct pushes to main
+```sh
+just test          # unit tests (-race -short)
+just e2e           # e2e tests (builds binary, runs YAML scenarios)
+just test-all      # both unit + e2e
+go test -run TestFoo ./...    # run a single test
+```
 
-## CI/CD
+## Code Quality
 
-### Continuous Integration
+```sh
+golangci-lint run ./...
+go vet ./...
+go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
+```
 
-Every push triggers:
-- Tests on Go 1.25 and 1.26 (latest two releases)
-- Linting with golangci-lint
-- Build verification
-- Cross-compilation checks
+The project uses golangci-lint with errcheck, gocritic, gofmt, gosimple,
+govet, ineffassign, misspell, revive, staticcheck, and others. See
+`.golangci.yml` for the full configuration.
 
-### Release Process
+## Architecture
 
-1. All changes merged to `main` via PRs
-2. When ready to release:
-   ```bash
-   git tag v0.1.x
-   git push origin v0.1.x
-   ```
-3. Automated workflow:
-    - Builds binaries for all platforms
-    - Publishes GitHub release
-    - Updates Homebrew tap formula
-    - Updates Scoop bucket manifest
-    - Submits WinGet package to `microsoft/winget-pkgs`
-    - Publishes AUR package (`wt-bin`)
-    - Creates `.deb`, `.rpm`, and `.pkg.tar.zst` packages
+Single Go package (`main`), built on cobra. Key source files:
 
-## Getting Help
+- `main.go` -- entry point
+- `commands.go` -- all CLI commands
+- `git.go` -- git helpers and result cache
+- `pr.go` -- PR/MR integration
+- `migrate.go` -- worktree migration logic
+- `config.go` -- configuration loading
+- `paths.go` -- path resolution
+- `hooks.go` -- git hook management
+- `init.go` -- shell integration setup
+- `output.go` -- terminal output helpers
 
-- Check existing issues: https://github.com/timvw/wt/issues
-- Read the README: https://github.com/timvw/wt#readme
-- Ask questions in discussions
+Tests use a mock git runner defined in `mock_test.go`.
+
+## Pull Requests
+
+- Run `golangci-lint run ./...` and `just test` before submitting.
+- Add tests for new functionality.
+- One logical change per commit.
