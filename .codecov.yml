@@ -5,12 +5,12 @@ coverage:
   status:
     project:
       default:
-        target: 70%
+        target: 80%
         threshold: 2%
     patch:
       default:
         informational: true
-        target: 70%
+        target: 80%
 
 ignore:
   - "e2e/**"

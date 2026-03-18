@@ -5,8 +5,10 @@ run:
 linters:
   enable:
     - errcheck
+    - exhaustive
     - gocritic
     - gofmt
+    - gosec
     - gosimple
     - govet
     - ineffassign
@@ -33,3 +35,8 @@ issues:
     - path: _test\.go
       linters:
         - errcheck
+    - path: _test\.go
+      linters:
+        - gosec
+    - path: cleanup_test\.go
+      text: "G204"
