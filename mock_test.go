@@ -1,0 +1,345 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+)
+
+// mockGitRunner records commands and returns canned responses.
+type mockGitRunner struct {
+	// outputs maps "arg0 arg1 ..." to the stdout bytes returned by Output().
+	outputs map[string][]byte
+	// errors maps "arg0 arg1 ..." to the error returned.
+	errors map[string]error
+	// calls records each invocation's args.
+	calls [][]string
+}
+
+func newMockGitRunner() *mockGitRunner {
+	return &mockGitRunner{
+		outputs: make(map[string][]byte),
+		errors:  make(map[string]error),
+	}
+}
+
+func (m *mockGitRunner) Command(args ...string) *exec.Cmd {
+	m.calls = append(m.calls, args)
+	key := strings.Join(args, " ")
+
+	// Build a helper command that prints the canned output or exits with error.
+	if errVal, ok := m.errors[key]; ok && errVal != nil {
+		// Return a command that fails
+		cmd := exec.Command("sh", "-c", fmt.Sprintf("echo -n %q >&2; exit 1", errVal.Error()))
+		return cmd
+	}
+
+	if output, ok := m.outputs[key]; ok {
+		cmd := exec.Command("echo", "-n", string(output))
+		return cmd
+	}
+
+	// Default: return empty success
+	cmd := exec.Command("true")
+	return cmd
+}
+
+// withMockGit sets gitCmd to a mock and restores it after the test.
+func withMockGit(t *testing.T) *mockGitRunner {
+	t.Helper()
+	mock := newMockGitRunner()
+	orig := gitCmd
+	gitCmd = mock
+	t.Cleanup(func() { gitCmd = orig })
+	return mock
+}
+
+// withAppConfig saves and restores appCfg for the test.
+func withAppConfig(t *testing.T) {
+	t.Helper()
+	orig := appCfg
+	t.Cleanup(func() { appCfg = orig })
+}
+
+// --- Hook tests ---
+
+func TestRunHooksPreHookFailure(t *testing.T) {
+	err := runHooks("pre_create", []string{"false"}, map[string]string{})
+	if err == nil {
+		t.Fatal("expected pre-hook failure to return error")
+	}
+	if !strings.Contains(err.Error(), "false") {
+		t.Errorf("error should mention the command: %v", err)
+	}
+}
+
+func TestRunHooksPostHookFailureWarnsOnly(t *testing.T) {
+	err := runHooks("post_create", []string{"false"}, map[string]string{})
+	if err != nil {
+		t.Fatalf("post-hook failure should not return error, got: %v", err)
+	}
+}
+
+func TestRunHooksDisabledEnvVar(t *testing.T) {
+	t.Setenv("WT_HOOKS_DISABLED", "1")
+	err := runHooks("pre_create", []string{"false"}, map[string]string{})
+	if err != nil {
+		t.Fatalf("hooks should be skipped when disabled, got: %v", err)
+	}
+}
+
+func TestRunHooksEmptyList(t *testing.T) {
+	err := runHooks("pre_create", nil, map[string]string{})
+	if err != nil {
+		t.Fatalf("empty hooks should not return error, got: %v", err)
+	}
+}
+
+func TestRunHooksEnvPropagation(t *testing.T) {
+	// Run a hook that prints a WT_ env var to a temp file
+	tmpFile := t.TempDir() + "/env_output"
+	hookCmd := fmt.Sprintf("echo $WT_BRANCH > %s", tmpFile)
+	env := map[string]string{
+		"WT_BRANCH": "test-branch",
+		"WT_PATH":   "/tmp/test",
+	}
+
+	err := runHooks("post_create", []string{hookCmd}, env)
+	if err != nil {
+		t.Fatalf("hook should succeed, got: %v", err)
+	}
+
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("failed to read hook output: %v", err)
+	}
+	if got := strings.TrimSpace(string(data)); got != "test-branch" {
+		t.Errorf("hook env WT_BRANCH = %q, want %q", got, "test-branch")
+	}
+}
+
+func TestBuildHookEnvKeys(t *testing.T) {
+	info := repoInfo{
+		Main:  "/home/user/repo",
+		Host:  "github.com",
+		Owner: "owner",
+		Name:  "repo",
+	}
+	env := buildHookEnv(info, "feature", "/tmp/wt/feature")
+
+	expected := map[string]string{
+		"WT_PATH":       "/tmp/wt/feature",
+		"WT_BRANCH":     "feature",
+		"WT_MAIN":       "/home/user/repo",
+		"WT_REPO_NAME":  "repo",
+		"WT_REPO_HOST":  "github.com",
+		"WT_REPO_OWNER": "owner",
+	}
+	for k, want := range expected {
+		if got := env[k]; got != want {
+			t.Errorf("env[%q] = %q, want %q", k, got, want)
+		}
+	}
+}
+
+func TestGetHooksAllNames(t *testing.T) {
+	withAppConfig(t)
+	appCfg.Hooks = Hooks{
+		PreCreate:    []string{"pre-create-cmd"},
+		PostCreate:   []string{"post-create-cmd"},
+		PreCheckout:  []string{"pre-checkout-cmd"},
+		PostCheckout: []string{"post-checkout-cmd"},
+		PreRemove:    []string{"pre-remove-cmd"},
+		PostRemove:   []string{"post-remove-cmd"},
+		PrePR:        []string{"pre-pr-cmd"},
+		PostPR:       []string{"post-pr-cmd"},
+		PreMR:        []string{"pre-mr-cmd"},
+		PostMR:       []string{"post-mr-cmd"},
+	}
+
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"pre_create", "pre-create-cmd"},
+		{"post_create", "post-create-cmd"},
+		{"pre_checkout", "pre-checkout-cmd"},
+		{"post_checkout", "post-checkout-cmd"},
+		{"pre_remove", "pre-remove-cmd"},
+		{"post_remove", "post-remove-cmd"},
+		{"pre_pr", "pre-pr-cmd"},
+		{"post_pr", "post-pr-cmd"},
+		{"pre_mr", "pre-mr-cmd"},
+		{"post_mr", "post-mr-cmd"},
+	}
+
+	for _, tt := range tests {
+		hooks := getHooks(tt.name)
+		if len(hooks) != 1 || hooks[0] != tt.want {
+			t.Errorf("getHooks(%q) = %v, want [%q]", tt.name, hooks, tt.want)
+		}
+	}
+
+	// Unknown hook name
+	if hooks := getHooks("unknown"); hooks != nil {
+		t.Errorf("getHooks(unknown) = %v, want nil", hooks)
+	}
+}
+
+// --- Git helper tests with mock ---
+
+func TestGetDefaultBaseError(t *testing.T) {
+	mock := withMockGit(t)
+	mock.errors["symbolic-ref refs/remotes/origin/HEAD"] = fmt.Errorf("not found")
+
+	base := getDefaultBase()
+	if base != "main" {
+		t.Errorf("getDefaultBase() = %q, want %q on error", base, "main")
+	}
+}
+
+func TestGetDefaultBaseSuccess(t *testing.T) {
+	mock := withMockGit(t)
+	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/develop")
+
+	base := getDefaultBase()
+	if base != "develop" {
+		t.Errorf("getDefaultBase() = %q, want %q", base, "develop")
+	}
+}
+
+func TestBranchExistsLocal(t *testing.T) {
+	mock := withMockGit(t)
+	// Local branch check succeeds
+	mock.outputs["show-ref --verify --quiet refs/heads/feature"] = []byte("")
+
+	if !branchExists("feature") {
+		t.Error("branchExists() should return true for local branch")
+	}
+}
+
+func TestBranchExistsRemoteOnly(t *testing.T) {
+	mock := withMockGit(t)
+	// Local fails, remote succeeds
+	mock.errors["show-ref --verify --quiet refs/heads/feature"] = fmt.Errorf("not found")
+	mock.outputs["show-ref --verify --quiet refs/remotes/origin/feature"] = []byte("")
+
+	if !branchExists("feature") {
+		t.Error("branchExists() should return true for remote branch")
+	}
+}
+
+func TestBranchExistsNeither(t *testing.T) {
+	mock := withMockGit(t)
+	mock.errors["show-ref --verify --quiet refs/heads/feature"] = fmt.Errorf("not found")
+	mock.errors["show-ref --verify --quiet refs/remotes/origin/feature"] = fmt.Errorf("not found")
+
+	if branchExists("feature") {
+		t.Error("branchExists() should return false when branch not found")
+	}
+}
+
+func TestGetWorktreeListPorcelainError(t *testing.T) {
+	mock := withMockGit(t)
+	mock.errors["worktree list --porcelain"] = fmt.Errorf("git error")
+
+	_, err := getWorktreeListPorcelain()
+	if err == nil {
+		t.Fatal("expected error from getWorktreeListPorcelain")
+	}
+}
+
+func TestGetMergedBranchesError(t *testing.T) {
+	mock := withMockGit(t)
+	mock.errors["branch --merged main --format=%(refname:short)"] = fmt.Errorf("git error")
+
+	_, err := getMergedBranches("main")
+	if err == nil {
+		t.Fatal("expected error from getMergedBranches")
+	}
+}
+
+func TestGetMergedBranchesFiltersBase(t *testing.T) {
+	mock := withMockGit(t)
+	mock.outputs["branch --merged main --format=%(refname:short)"] = []byte("main\nmaster\nfeature-done\n")
+
+	branches, err := getMergedBranches("main")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(branches) != 1 || branches[0] != "feature-done" {
+		t.Errorf("getMergedBranches() = %v, want [feature-done]", branches)
+	}
+}
+
+func TestWorktreeExistsNotFound(t *testing.T) {
+	mock := withMockGit(t)
+	mock.outputs["worktree list"] = []byte("/home/user/repo  abc1234 [main]\n")
+
+	_, exists := worktreeExists("feature")
+	if exists {
+		t.Error("worktreeExists() should return false for non-existent branch")
+	}
+}
+
+func TestWorktreeExistsFound(t *testing.T) {
+	mock := withMockGit(t)
+	mock.outputs["worktree list"] = []byte("/home/user/repo  abc1234 [main]\n/tmp/wt/feature  def5678 [feature]\n")
+
+	path, exists := worktreeExists("feature")
+	if !exists {
+		t.Error("worktreeExists() should return true for existing branch")
+	}
+	if path != "/tmp/wt/feature" {
+		t.Errorf("worktreeExists() path = %q, want %q", path, "/tmp/wt/feature")
+	}
+}
+
+func TestWorktreeExistsGitError(t *testing.T) {
+	mock := withMockGit(t)
+	mock.errors["worktree list"] = fmt.Errorf("git error")
+
+	_, exists := worktreeExists("feature")
+	if exists {
+		t.Error("worktreeExists() should return false on git error")
+	}
+}
+
+// --- PR/MR helper tests ---
+
+func TestParseGitHubBranchNameInvalidJSON(t *testing.T) {
+	_, err := parseGitHubBranchName("not json")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestParseGitHubBranchNameEmpty(t *testing.T) {
+	_, err := parseGitHubBranchName(`{"headRefName":""}`)
+	if err == nil {
+		t.Fatal("expected error for empty branch")
+	}
+}
+
+func TestParseGitLabBranchNameInvalidJSON(t *testing.T) {
+	_, err := parseGitLabBranchName("not json")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestParseGitLabBranchNameEmpty(t *testing.T) {
+	_, err := parseGitLabBranchName(`{"source_branch":""}`)
+	if err == nil {
+		t.Fatal("expected error for empty branch")
+	}
+}
+
+func TestGetPRBranchNameInvalidRemoteType(t *testing.T) {
+	_, err := getPRBranchName("123", RemoteUnknown)
+	if err == nil {
+		t.Fatal("expected error for unknown remote type")
+	}
+}
