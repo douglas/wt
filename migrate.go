@@ -69,55 +69,19 @@ Examples:
 }
 
 func listParsedWorktrees() ([]parsedWorktree, error) {
-	cmd := exec.Command("git", "worktree", "list", "--porcelain")
-	output, err := cmd.Output()
+	wts, err := getWorktreeListPorcelain()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list worktrees: %w", err)
 	}
 
-	var entries []parsedWorktree
-	var current *parsedWorktree
-
-	flush := func() {
-		if current == nil {
-			return
+	entries := make([]parsedWorktree, len(wts))
+	for i, wt := range wts {
+		entries[i] = parsedWorktree{
+			Path:     wt.Path,
+			Branch:   wt.Branch,
+			Detached: wt.Detached,
+			Main:     i == 0,
 		}
-		entries = append(entries, *current)
-		current = nil
-	}
-
-	for _, raw := range strings.Split(string(output), "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			flush()
-			continue
-		}
-
-		if strings.HasPrefix(line, "worktree ") {
-			flush()
-			current = &parsedWorktree{Path: strings.TrimPrefix(line, "worktree ")}
-			continue
-		}
-
-		if current == nil {
-			continue
-		}
-
-		if strings.HasPrefix(line, "branch ") {
-			ref := strings.TrimPrefix(line, "branch ")
-			current.Branch = strings.TrimPrefix(ref, "refs/heads/")
-			continue
-		}
-
-		if line == "detached" {
-			current.Detached = true
-		}
-	}
-
-	flush()
-
-	if len(entries) > 0 {
-		entries[0].Main = true
 	}
 
 	return entries, nil
