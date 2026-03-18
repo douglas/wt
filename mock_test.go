@@ -61,6 +61,30 @@ func withMockGit(t *testing.T) *mockGitRunner {
 	return mock
 }
 
+// withMockExt sets extCmd to a mock and restores it after the test.
+func withMockExt(t *testing.T) *mockGitRunner {
+	t.Helper()
+	mock := newMockGitRunner()
+	orig := extCmd
+	extCmd = mock
+	t.Cleanup(func() { extCmd = orig })
+	return mock
+}
+
+// withMockLookPath sets lookPathFunc to a mock and restores it after the test.
+// The mock returns ("found", nil) for any binary in the found set, and an error otherwise.
+func withMockLookPath(t *testing.T, found map[string]bool) {
+	t.Helper()
+	orig := lookPathFunc
+	lookPathFunc = func(file string) (string, error) {
+		if found[file] {
+			return file, nil
+		}
+		return "", fmt.Errorf("executable file not found in $PATH: %s", file)
+	}
+	t.Cleanup(func() { lookPathFunc = orig })
+}
+
 // withAppConfig saves and restores appCfg for the test.
 func withAppConfig(t *testing.T) {
 	t.Helper()
@@ -268,6 +292,51 @@ func TestBranchExistsMock(t *testing.T) {
 
 			if got := branchExists("feature"); got != tt.wantExists {
 				t.Errorf("branchExists() = %v, want %v", got, tt.wantExists)
+			}
+		})
+	}
+}
+
+func TestGetAvailableBranchesMock(t *testing.T) {
+	tests := []struct {
+		name       string
+		mockOutput string
+		mockError  error
+		wantCount  int
+		wantErr    bool
+	}{
+		{
+			name:       "filters duplicates and remotes",
+			mockOutput: "main\nfeature\norigin/feature\norigin/HEAD -> origin/main\n",
+			wantCount:  2,
+		},
+		{
+			name:       "empty output",
+			mockOutput: "",
+			wantCount:  0,
+		},
+		{
+			name:      "error",
+			mockError: fmt.Errorf("git error"),
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := withMockGit(t)
+			if tt.mockError != nil {
+				mock.errors["branch -a --format=%(refname:short)"] = tt.mockError
+			} else {
+				mock.outputs["branch -a --format=%(refname:short)"] = []byte(tt.mockOutput)
+			}
+
+			branches, err := getAvailableBranches()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && len(branches) != tt.wantCount {
+				t.Errorf("got %d branches, want %d: %v", len(branches), tt.wantCount, branches)
 			}
 		})
 	}
