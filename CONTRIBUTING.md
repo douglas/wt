@@ -113,7 +113,7 @@ The `main` branch is protected and requires:
 ### Continuous Integration
 
 Every push triggers:
-- Tests on Go 1.24 and 1.25 (latest two releases)
+- Tests on Go 1.25 and 1.26 (latest two releases)
 - Linting with golangci-lint
 - Build verification
 - Cross-compilation checks

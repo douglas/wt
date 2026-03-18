@@ -29,7 +29,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.26'
           cache: true
 
       - name: Verify dependencies
@@ -61,7 +61,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.26'
           cache: true
 
       - name: Run unit tests
@@ -97,20 +97,20 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.26'
           cache: true
 
       - name: Build for all platforms
         run: |
           mkdir -p bin
           # Native build
-          go build -o bin/wt .
+          go build -ldflags="-s -w" -o bin/wt .
           # Cross-compile for all supported platforms
-          GOOS=linux GOARCH=amd64 go build -o bin/wt-linux-amd64 .
-          GOOS=linux GOARCH=arm64 go build -o bin/wt-linux-arm64 .
-          GOOS=darwin GOARCH=amd64 go build -o bin/wt-darwin-amd64 .
-          GOOS=darwin GOARCH=arm64 go build -o bin/wt-darwin-arm64 .
-          GOOS=windows GOARCH=amd64 go build -o bin/wt-windows-amd64.exe .
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/wt-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o bin/wt-linux-arm64 .
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/wt-darwin-amd64 .
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/wt-darwin-arm64 .
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o bin/wt-windows-amd64.exe .
 
       - name: Verify binaries
         run: |
@@ -193,7 +193,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.26'
           cache: true
 
       - name: Install zsh (Linux)

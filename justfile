@@ -9,7 +9,7 @@ default:
 # Build the binary
 build:
     mkdir -p {{build_dir}}
-    go build -o {{build_dir}}/{{binary_name}} .
+    go build -ldflags="-s -w" -o {{build_dir}}/{{binary_name}} .
 
 # Install to /usr/local/bin (requires sudo)
 install: build
@@ -57,7 +57,7 @@ test-all: test e2e
 # Cross-compile for multiple platforms
 build-all:
     mkdir -p {{build_dir}}
-    GOOS=linux GOARCH=amd64 go build -o {{build_dir}}/{{binary_name}}-linux-amd64 .
-    GOOS=darwin GOARCH=amd64 go build -o {{build_dir}}/{{binary_name}}-darwin-amd64 .
-    GOOS=darwin GOARCH=arm64 go build -o {{build_dir}}/{{binary_name}}-darwin-arm64 .
-    GOOS=windows GOARCH=amd64 go build -o {{build_dir}}/{{binary_name}}-windows-amd64.exe .
+    GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o {{build_dir}}/{{binary_name}}-linux-amd64 .
+    GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o {{build_dir}}/{{binary_name}}-darwin-amd64 .
+    GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o {{build_dir}}/{{binary_name}}-darwin-arm64 .
+    GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o {{build_dir}}/{{binary_name}}-windows-amd64.exe .

@@ -588,7 +588,7 @@ Re-run the `eval` line after changing the shell completion code in `shellenv`.
 
 ### For Building from Source
 
-- Go 1.24+ (we support and test the latest two Go releases: 1.24 and 1.25)
+- Go 1.26+ (we support and test the latest two Go releases: 1.25 and 1.26)
 - `just` (optional, for using the justfile)
 
 ## How It Works
