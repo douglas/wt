@@ -1452,6 +1452,116 @@ func TestRunHooksEnvVarsAvailable(t *testing.T) {
 	}
 }
 
+func TestCleanupWorktreePath(t *testing.T) {
+	t.Run("empty path returns nil", func(t *testing.T) {
+		err := cleanupWorktreePath("")
+		if err != nil {
+			t.Fatalf("cleanupWorktreePath(\"\") returned error: %v", err)
+		}
+	})
+
+	t.Run("removes worktree dir and empty parent within root", func(t *testing.T) {
+		withAppConfig(t)
+
+		tmpDir := t.TempDir()
+		appCfg.Root = tmpDir
+
+		branchDir := filepath.Join(tmpDir, "repo", "branch")
+		if err := os.MkdirAll(branchDir, 0o755); err != nil {
+			t.Fatalf("failed to create branch dir: %v", err)
+		}
+
+		if err := cleanupWorktreePath(branchDir); err != nil {
+			t.Fatalf("cleanupWorktreePath() returned error: %v", err)
+		}
+
+		if _, err := os.Stat(branchDir); !os.IsNotExist(err) {
+			t.Error("expected branch dir to be removed")
+		}
+		repoDir := filepath.Join(tmpDir, "repo")
+		if _, err := os.Stat(repoDir); !os.IsNotExist(err) {
+			t.Error("expected empty parent repo dir to be removed")
+		}
+	})
+
+	t.Run("preserves non-empty parent", func(t *testing.T) {
+		withAppConfig(t)
+
+		tmpDir := t.TempDir()
+		appCfg.Root = tmpDir
+
+		repoDir := filepath.Join(tmpDir, "repo")
+		branchDir := filepath.Join(repoDir, "branch")
+		if err := os.MkdirAll(branchDir, 0o755); err != nil {
+			t.Fatalf("failed to create branch dir: %v", err)
+		}
+		// Put another file in the repo dir so it is non-empty after branch removal.
+		keepFile := filepath.Join(repoDir, "other-branch")
+		if err := os.MkdirAll(keepFile, 0o755); err != nil {
+			t.Fatalf("failed to create sibling dir: %v", err)
+		}
+
+		if err := cleanupWorktreePath(branchDir); err != nil {
+			t.Fatalf("cleanupWorktreePath() returned error: %v", err)
+		}
+
+		if _, err := os.Stat(branchDir); !os.IsNotExist(err) {
+			t.Error("expected branch dir to be removed")
+		}
+		if _, err := os.Stat(repoDir); err != nil {
+			t.Error("expected non-empty parent repo dir to be preserved")
+		}
+	})
+}
+
+func TestBuildRootCmdLong(t *testing.T) {
+	t.Run("valid strategy", func(t *testing.T) {
+		withAppConfig(t)
+		appCfg.Strategy = "global"
+		appCfg.Pattern = ""
+		appCfg.Root = "/tmp/worktrees"
+
+		long := buildRootCmdLong()
+		if !strings.Contains(long, "Strategy: global") {
+			t.Errorf("missing 'Strategy: global', got:\n%s", long)
+		}
+		if !strings.Contains(long, "/tmp/worktrees") {
+			t.Errorf("missing '/tmp/worktrees', got:\n%s", long)
+		}
+	})
+
+	t.Run("invalid strategy uses fallback", func(t *testing.T) {
+		withAppConfig(t)
+		appCfg.Strategy = "invalid-strategy"
+		appCfg.Pattern = ""
+		appCfg.Root = "/tmp/worktrees"
+
+		long := buildRootCmdLong()
+		if !strings.Contains(long, "unknown") {
+			t.Errorf("expected 'unknown' fallback pattern, got:\n%s", long)
+		}
+	})
+
+	t.Run("explicit pattern used as fallback", func(t *testing.T) {
+		withAppConfig(t)
+		appCfg.Strategy = "invalid-strategy"
+		appCfg.Pattern = "{.worktreeRoot}/custom/{.branch}"
+		appCfg.Root = "/tmp/worktrees"
+
+		long := buildRootCmdLong()
+		if !strings.Contains(long, "{.worktreeRoot}/custom/{.branch}") {
+			t.Errorf("expected explicit pattern in output, got:\n%s", long)
+		}
+	})
+}
+
+func TestPrintCommandHelp(t *testing.T) {
+	err := printCommandHelp(rootCmd)
+	if err != nil {
+		t.Fatalf("printCommandHelp(rootCmd) returned error: %v", err)
+	}
+}
+
 func TestRunHooksMultiplePostContinueOnFailure(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping in short mode")

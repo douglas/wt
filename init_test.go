@@ -390,6 +390,30 @@ func TestDryRun(t *testing.T) {
 	})
 }
 
+func TestInstallShellConfigDryRunUpdateExisting(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+
+	// Write a file that already has the markers.
+	original := "# preamble\n" + markerStart + "\neval \"$(wt shellenv)\"\n" + markerEnd + "\n# postamble\n"
+	if err := os.WriteFile(configPath, []byte(original), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	// Dry-run update should not modify the file.
+	if err := installShellConfig(configPath, "bash", true, true); err != nil {
+		t.Fatalf("installShellConfig dry-run failed: %v", err)
+	}
+
+	after, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config: %v", err)
+	}
+	if string(after) != original {
+		t.Errorf("dry-run modified the file.\nbefore: %q\nafter:  %q", original, string(after))
+	}
+}
+
 func TestInitJSONOutput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping init JSON integration test in short mode")

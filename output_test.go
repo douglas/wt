@@ -201,6 +201,42 @@ func TestEmitJSONError(t *testing.T) {
 	}
 }
 
+func TestCommandPathNilCmd(t *testing.T) {
+	got := commandPath(nil)
+	if got != "wt" {
+		t.Fatalf("commandPath(nil) = %q, want %q", got, "wt")
+	}
+}
+
+func TestEmitJSONSuccessTextMode(t *testing.T) {
+	original := appCfg.OutputFormat
+	t.Cleanup(func() { appCfg.OutputFormat = original })
+	appCfg.OutputFormat = "text"
+
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = origStdout })
+
+	err = emitJSONSuccess(rootCmd, map[string]string{"hello": "world"})
+	if err != nil {
+		t.Fatalf("emitJSONSuccess() unexpected error: %v", err)
+	}
+
+	_ = w.Close()
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("failed to read stdout: %v", err)
+	}
+
+	if strings.TrimSpace(buf.String()) != "" {
+		t.Fatalf("expected no output in text mode, got %q", buf.String())
+	}
+}
+
 func TestEmitJSONErrorTextMode(t *testing.T) {
 	original := appCfg.OutputFormat
 	t.Cleanup(func() { appCfg.OutputFormat = original })

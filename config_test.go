@@ -633,14 +633,98 @@ func TestSetHookField(t *testing.T) {
 			},
 		},
 		{
-			name:    "hooks post_mr",
+			name:    "hooks post_create",
 			section: "hooks",
-			key:     "post_mr",
+			key:     "post_create",
 			val:     []string{"cmd3"},
 			check: func(t *testing.T, h Hooks) {
 				t.Helper()
-				if len(h.PostMR) != 1 || h.PostMR[0] != "cmd3" {
-					t.Errorf("PostMR = %v, want [cmd3]", h.PostMR)
+				if len(h.PostCreate) != 1 || h.PostCreate[0] != "cmd3" {
+					t.Errorf("PostCreate = %v, want [cmd3]", h.PostCreate)
+				}
+			},
+		},
+		{
+			name:    "hooks pre_checkout",
+			section: "hooks",
+			key:     "pre_checkout",
+			val:     []string{"cmd4"},
+			check: func(t *testing.T, h Hooks) {
+				t.Helper()
+				if len(h.PreCheckout) != 1 || h.PreCheckout[0] != "cmd4" {
+					t.Errorf("PreCheckout = %v, want [cmd4]", h.PreCheckout)
+				}
+			},
+		},
+		{
+			name:    "hooks pre_remove",
+			section: "hooks",
+			key:     "pre_remove",
+			val:     []string{"cmd5"},
+			check: func(t *testing.T, h Hooks) {
+				t.Helper()
+				if len(h.PreRemove) != 1 || h.PreRemove[0] != "cmd5" {
+					t.Errorf("PreRemove = %v, want [cmd5]", h.PreRemove)
+				}
+			},
+		},
+		{
+			name:    "hooks post_remove",
+			section: "hooks",
+			key:     "post_remove",
+			val:     []string{"cmd6"},
+			check: func(t *testing.T, h Hooks) {
+				t.Helper()
+				if len(h.PostRemove) != 1 || h.PostRemove[0] != "cmd6" {
+					t.Errorf("PostRemove = %v, want [cmd6]", h.PostRemove)
+				}
+			},
+		},
+		{
+			name:    "hooks pre_pr",
+			section: "hooks",
+			key:     "pre_pr",
+			val:     []string{"cmd7"},
+			check: func(t *testing.T, h Hooks) {
+				t.Helper()
+				if len(h.PrePR) != 1 || h.PrePR[0] != "cmd7" {
+					t.Errorf("PrePR = %v, want [cmd7]", h.PrePR)
+				}
+			},
+		},
+		{
+			name:    "hooks post_pr",
+			section: "hooks",
+			key:     "post_pr",
+			val:     []string{"cmd8"},
+			check: func(t *testing.T, h Hooks) {
+				t.Helper()
+				if len(h.PostPR) != 1 || h.PostPR[0] != "cmd8" {
+					t.Errorf("PostPR = %v, want [cmd8]", h.PostPR)
+				}
+			},
+		},
+		{
+			name:    "hooks pre_mr",
+			section: "hooks",
+			key:     "pre_mr",
+			val:     []string{"cmd9"},
+			check: func(t *testing.T, h Hooks) {
+				t.Helper()
+				if len(h.PreMR) != 1 || h.PreMR[0] != "cmd9" {
+					t.Errorf("PreMR = %v, want [cmd9]", h.PreMR)
+				}
+			},
+		},
+		{
+			name:    "hooks post_mr",
+			section: "hooks",
+			key:     "post_mr",
+			val:     []string{"cmd10"},
+			check: func(t *testing.T, h Hooks) {
+				t.Helper()
+				if len(h.PostMR) != 1 || h.PostMR[0] != "cmd10" {
+					t.Errorf("PostMR = %v, want [cmd10]", h.PostMR)
 				}
 			},
 		},
@@ -648,7 +732,7 @@ func TestSetHookField(t *testing.T) {
 			name:    "wrong section ignored",
 			section: "other",
 			key:     "pre_create",
-			val:     []string{"cmd4"},
+			val:     []string{"cmd11"},
 			check: func(t *testing.T, h Hooks) {
 				t.Helper()
 				if h.PreCreate != nil {
@@ -660,7 +744,7 @@ func TestSetHookField(t *testing.T) {
 			name:    "unknown key ignored",
 			section: "hooks",
 			key:     "unknown_key",
-			val:     []string{"cmd5"},
+			val:     []string{"cmd12"},
 			check: func(t *testing.T, h Hooks) {
 				t.Helper()
 				// All fields should remain zero-value
