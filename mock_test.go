@@ -195,54 +195,81 @@ func TestGetHooksAllNames(t *testing.T) {
 
 // --- Git helper tests with mock ---
 
-func TestGetDefaultBaseError(t *testing.T) {
-	mock := withMockGit(t)
-	mock.errors["symbolic-ref refs/remotes/origin/HEAD"] = fmt.Errorf("not found")
+func TestGetDefaultBaseMock(t *testing.T) {
+	tests := []struct {
+		name       string
+		mockOutput []byte
+		mockError  error
+		want       string
+	}{
+		{
+			name:      "error falls back to main",
+			mockError: fmt.Errorf("not found"),
+			want:      "main",
+		},
+		{
+			name:       "success extracts branch",
+			mockOutput: []byte("refs/remotes/origin/develop"),
+			want:       "develop",
+		},
+	}
 
-	base := getDefaultBase()
-	if base != "main" {
-		t.Errorf("getDefaultBase() = %q, want %q on error", base, "main")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := withMockGit(t)
+			if tt.mockError != nil {
+				mock.errors["symbolic-ref refs/remotes/origin/HEAD"] = tt.mockError
+			} else {
+				mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = tt.mockOutput
+			}
+
+			if got := getDefaultBase(); got != tt.want {
+				t.Errorf("getDefaultBase() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestGetDefaultBaseSuccess(t *testing.T) {
-	mock := withMockGit(t)
-	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/develop")
-
-	base := getDefaultBase()
-	if base != "develop" {
-		t.Errorf("getDefaultBase() = %q, want %q", base, "develop")
+func TestBranchExistsMock(t *testing.T) {
+	tests := []struct {
+		name       string
+		setupMock  func(*mockGitRunner)
+		wantExists bool
+	}{
+		{
+			name: "local branch exists",
+			setupMock: func(mock *mockGitRunner) {
+				mock.outputs["show-ref --verify --quiet refs/heads/feature"] = []byte("")
+			},
+			wantExists: true,
+		},
+		{
+			name: "remote only",
+			setupMock: func(mock *mockGitRunner) {
+				mock.errors["show-ref --verify --quiet refs/heads/feature"] = fmt.Errorf("not found")
+				mock.outputs["show-ref --verify --quiet refs/remotes/origin/feature"] = []byte("")
+			},
+			wantExists: true,
+		},
+		{
+			name: "neither",
+			setupMock: func(mock *mockGitRunner) {
+				mock.errors["show-ref --verify --quiet refs/heads/feature"] = fmt.Errorf("not found")
+				mock.errors["show-ref --verify --quiet refs/remotes/origin/feature"] = fmt.Errorf("not found")
+			},
+			wantExists: false,
+		},
 	}
-}
 
-func TestBranchExistsLocal(t *testing.T) {
-	mock := withMockGit(t)
-	// Local branch check succeeds
-	mock.outputs["show-ref --verify --quiet refs/heads/feature"] = []byte("")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := withMockGit(t)
+			tt.setupMock(mock)
 
-	if !branchExists("feature") {
-		t.Error("branchExists() should return true for local branch")
-	}
-}
-
-func TestBranchExistsRemoteOnly(t *testing.T) {
-	mock := withMockGit(t)
-	// Local fails, remote succeeds
-	mock.errors["show-ref --verify --quiet refs/heads/feature"] = fmt.Errorf("not found")
-	mock.outputs["show-ref --verify --quiet refs/remotes/origin/feature"] = []byte("")
-
-	if !branchExists("feature") {
-		t.Error("branchExists() should return true for remote branch")
-	}
-}
-
-func TestBranchExistsNeither(t *testing.T) {
-	mock := withMockGit(t)
-	mock.errors["show-ref --verify --quiet refs/heads/feature"] = fmt.Errorf("not found")
-	mock.errors["show-ref --verify --quiet refs/remotes/origin/feature"] = fmt.Errorf("not found")
-
-	if branchExists("feature") {
-		t.Error("branchExists() should return false when branch not found")
+			if got := branchExists("feature"); got != tt.wantExists {
+				t.Errorf("branchExists() = %v, want %v", got, tt.wantExists)
+			}
+		})
 	}
 }
 
@@ -279,48 +306,63 @@ func TestGetMergedBranchesFiltersBase(t *testing.T) {
 	}
 }
 
-func TestWorktreeExistsNotFound(t *testing.T) {
-	mock := withMockGit(t)
-	mock.outputs["worktree list --porcelain"] = []byte(
-		"worktree /home/user/repo\n" +
-			"HEAD abc1234\n" +
-			"branch refs/heads/main\n" +
-			"\n")
-
-	_, exists := worktreeExists("feature")
-	if exists {
-		t.Error("worktreeExists() should return false for non-existent branch")
+func TestWorktreeExistsMock(t *testing.T) {
+	tests := []struct {
+		name            string
+		porcelainOutput string
+		porcelainError  error
+		searchBranch    string
+		wantPath        string
+		wantExists      bool
+	}{
+		{
+			name: "not found",
+			porcelainOutput: "worktree /home/user/repo\n" +
+				"HEAD abc1234\n" +
+				"branch refs/heads/main\n" +
+				"\n",
+			searchBranch: "feature",
+			wantExists:   false,
+		},
+		{
+			name: "found",
+			porcelainOutput: "worktree /home/user/repo\n" +
+				"HEAD abc1234\n" +
+				"branch refs/heads/main\n" +
+				"\n" +
+				"worktree /tmp/wt/feature\n" +
+				"HEAD def5678\n" +
+				"branch refs/heads/feature\n" +
+				"\n",
+			searchBranch: "feature",
+			wantPath:     "/tmp/wt/feature",
+			wantExists:   true,
+		},
+		{
+			name:           "git error",
+			porcelainError: fmt.Errorf("git error"),
+			searchBranch:   "feature",
+			wantExists:     false,
+		},
 	}
-}
 
-func TestWorktreeExistsFound(t *testing.T) {
-	mock := withMockGit(t)
-	mock.outputs["worktree list --porcelain"] = []byte(
-		"worktree /home/user/repo\n" +
-			"HEAD abc1234\n" +
-			"branch refs/heads/main\n" +
-			"\n" +
-			"worktree /tmp/wt/feature\n" +
-			"HEAD def5678\n" +
-			"branch refs/heads/feature\n" +
-			"\n")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := withMockGit(t)
+			if tt.porcelainError != nil {
+				mock.errors["worktree list --porcelain"] = tt.porcelainError
+			} else {
+				mock.outputs["worktree list --porcelain"] = []byte(tt.porcelainOutput)
+			}
 
-	path, exists := worktreeExists("feature")
-	if !exists {
-		t.Error("worktreeExists() should return true for existing branch")
-	}
-	if path != "/tmp/wt/feature" {
-		t.Errorf("worktreeExists() path = %q, want %q", path, "/tmp/wt/feature")
-	}
-}
-
-func TestWorktreeExistsGitError(t *testing.T) {
-	mock := withMockGit(t)
-	mock.errors["worktree list --porcelain"] = fmt.Errorf("git error")
-
-	_, exists := worktreeExists("feature")
-	if exists {
-		t.Error("worktreeExists() should return false on git error")
+			path, exists := worktreeExists(tt.searchBranch)
+			if exists != tt.wantExists {
+				t.Errorf("worktreeExists() exists = %v, want %v", exists, tt.wantExists)
+			}
+			if path != tt.wantPath {
+				t.Errorf("worktreeExists() path = %q, want %q", path, tt.wantPath)
+			}
+		})
 	}
 }
 
