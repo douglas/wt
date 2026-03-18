@@ -359,6 +359,7 @@ func applyMigratePlan(cmd *cobra.Command, plan []migrateItem) error {
 				record(item, "failed", err.Error())
 				continue
 			}
+			resetWorktreeCache()
 
 			if !jsonMode {
 				fmt.Printf("Moved %s: %s -> %s\n", item.Branch, item.From, item.To)
@@ -407,6 +408,7 @@ func movePrimaryCheckout(from, to string, force bool) error {
 		}
 		return fmt.Errorf("failed to repair worktrees after moving primary checkout: %w", err)
 	}
+	resetWorktreeCache()
 
 	return nil
 }

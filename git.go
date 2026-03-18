@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -24,6 +23,17 @@ type worktreeListEntry struct {
 	Detached bool   `json:"detached,omitempty"`
 	Locked   string `json:"locked,omitempty"`
 	Prunable string `json:"prunable,omitempty"`
+}
+
+// worktreeCache holds cached worktree list results for the current command.
+var worktreeCache struct {
+	entries []worktreeListEntry
+	valid   bool
+}
+
+func resetWorktreeCache() {
+	worktreeCache.entries = nil
+	worktreeCache.valid = false
 }
 
 func getDefaultBase() string {
@@ -132,21 +142,13 @@ func getMainWorktreePath(defaultBranch, repoName, repoRoot string, isBare bool) 
 }
 
 func worktreeExists(branch string) (string, bool) {
-	cmd := gitCmd.Command("worktree", "list")
-	output, err := cmd.Output()
+	entries, err := getWorktreeListPorcelain()
 	if err != nil {
 		return "", false
 	}
-
-	lines := strings.Split(string(output), "\n")
-	searchPattern := fmt.Sprintf("[%s]", branch)
-	for _, line := range lines {
-		if strings.Contains(line, searchPattern) {
-			// Extract the path (first field)
-			fields := strings.Fields(line)
-			if len(fields) > 0 {
-				return fields[0], true
-			}
+	for _, e := range entries {
+		if e.Branch == branch {
+			return e.Path, true
 		}
 	}
 	return "", false
@@ -165,6 +167,10 @@ func branchExists(branch string) bool {
 }
 
 func getWorktreeListPorcelain() ([]worktreeListEntry, error) {
+	if worktreeCache.valid {
+		return worktreeCache.entries, nil
+	}
+
 	cmd := gitCmd.Command("worktree", "list", "--porcelain")
 	output, err := cmd.Output()
 	if err != nil {
@@ -210,6 +216,8 @@ func getWorktreeListPorcelain() ([]worktreeListEntry, error) {
 		entries = append(entries, current)
 	}
 
+	worktreeCache.entries = entries
+	worktreeCache.valid = true
 	return entries, nil
 }
 
@@ -257,21 +265,19 @@ func getAvailableBranches() ([]string, error) {
 }
 
 func getExistingWorktreeBranches() ([]string, error) {
-	cmd := gitCmd.Command("worktree", "list")
-	output, err := cmd.Output()
+	entries, err := getWorktreeListPorcelain()
 	if err != nil {
 		return nil, err
 	}
 
-	branches := []string{}
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines[1:] { // Skip first line (main worktree)
-		if line == "" {
-			continue
-		}
-		// Extract branch name from [branch] format
-		if matches := regexp.MustCompile(`\[([^\]]+)\]`).FindStringSubmatch(line); matches != nil {
-			branches = append(branches, matches[1])
+	if len(entries) <= 1 {
+		return nil, nil
+	}
+
+	var branches []string
+	for _, e := range entries[1:] { // Skip main worktree
+		if e.Branch != "" {
+			branches = append(branches, e.Branch)
 		}
 	}
 	return branches, nil

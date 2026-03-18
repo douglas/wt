@@ -281,6 +281,7 @@ func checkoutPROrMR(cmd *cobra.Command, input string, remoteType RemoteType) err
 	if err := addCmd.Run(); err != nil {
 		return fmt.Errorf("failed to create worktree: %w", err)
 	}
+	resetWorktreeCache()
 
 	// Ensure upstream tracking is set (best-effort, may fail for fork PRs)
 	upstreamCmd := gitCmd.Command("branch", "--set-upstream-to",

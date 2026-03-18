@@ -47,12 +47,17 @@ func (m *mockGitRunner) Command(args ...string) *exec.Cmd {
 }
 
 // withMockGit sets gitCmd to a mock and restores it after the test.
+// It also resets the worktree cache to prevent cross-test contamination.
 func withMockGit(t *testing.T) *mockGitRunner {
 	t.Helper()
 	mock := newMockGitRunner()
 	orig := gitCmd
 	gitCmd = mock
-	t.Cleanup(func() { gitCmd = orig })
+	resetWorktreeCache()
+	t.Cleanup(func() {
+		gitCmd = orig
+		resetWorktreeCache()
+	})
 	return mock
 }
 
@@ -276,7 +281,11 @@ func TestGetMergedBranchesFiltersBase(t *testing.T) {
 
 func TestWorktreeExistsNotFound(t *testing.T) {
 	mock := withMockGit(t)
-	mock.outputs["worktree list"] = []byte("/home/user/repo  abc1234 [main]\n")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo\n" +
+			"HEAD abc1234\n" +
+			"branch refs/heads/main\n" +
+			"\n")
 
 	_, exists := worktreeExists("feature")
 	if exists {
@@ -286,7 +295,15 @@ func TestWorktreeExistsNotFound(t *testing.T) {
 
 func TestWorktreeExistsFound(t *testing.T) {
 	mock := withMockGit(t)
-	mock.outputs["worktree list"] = []byte("/home/user/repo  abc1234 [main]\n/tmp/wt/feature  def5678 [feature]\n")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo\n" +
+			"HEAD abc1234\n" +
+			"branch refs/heads/main\n" +
+			"\n" +
+			"worktree /tmp/wt/feature\n" +
+			"HEAD def5678\n" +
+			"branch refs/heads/feature\n" +
+			"\n")
 
 	path, exists := worktreeExists("feature")
 	if !exists {
@@ -299,7 +316,7 @@ func TestWorktreeExistsFound(t *testing.T) {
 
 func TestWorktreeExistsGitError(t *testing.T) {
 	mock := withMockGit(t)
-	mock.errors["worktree list"] = fmt.Errorf("git error")
+	mock.errors["worktree list --porcelain"] = fmt.Errorf("git error")
 
 	_, exists := worktreeExists("feature")
 	if exists {

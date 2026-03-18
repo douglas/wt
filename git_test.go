@@ -368,6 +368,166 @@ func TestGetMainWorktreePathErrorBare(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// worktreeCache
+// ---------------------------------------------------------------------------
+
+func TestWorktreeCachePreventsDuplicateCalls(t *testing.T) {
+	mock := withMockGit(t)
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo\n" +
+			"HEAD abc123\n" +
+			"branch refs/heads/main\n" +
+			"\n" +
+			"worktree /tmp/wt/feature\n" +
+			"HEAD def456\n" +
+			"branch refs/heads/feature\n" +
+			"\n")
+
+	// First call populates cache
+	entries1, err := getWorktreeListPorcelain()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries1) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries1))
+	}
+
+	// Second call should use cache (mock only returns output once per key,
+	// but cache means it won't call git again)
+	entries2, err := getWorktreeListPorcelain()
+	if err != nil {
+		t.Fatalf("unexpected error on cached call: %v", err)
+	}
+	if len(entries2) != 2 {
+		t.Fatalf("cached call got %d entries, want 2", len(entries2))
+	}
+
+	// worktreeExists should also use the cache
+	path, exists := worktreeExists("feature")
+	if !exists {
+		t.Error("worktreeExists() should find 'feature' via cache")
+	}
+	if path != "/tmp/wt/feature" {
+		t.Errorf("path = %q, want %q", path, "/tmp/wt/feature")
+	}
+
+	// getExistingWorktreeBranches should also use the cache
+	branches, err := getExistingWorktreeBranches()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(branches) != 1 || branches[0] != "feature" {
+		t.Errorf("branches = %v, want [feature]", branches)
+	}
+}
+
+func TestResetWorktreeCacheInvalidates(t *testing.T) {
+	mock := withMockGit(t)
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo\n" +
+			"HEAD abc123\n" +
+			"branch refs/heads/main\n" +
+			"\n")
+
+	// Populate cache
+	entries, err := getWorktreeListPorcelain()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+
+	// Reset and update mock output
+	resetWorktreeCache()
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo\n" +
+			"HEAD abc123\n" +
+			"branch refs/heads/main\n" +
+			"\n" +
+			"worktree /tmp/wt/new-branch\n" +
+			"HEAD def456\n" +
+			"branch refs/heads/new-branch\n" +
+			"\n")
+
+	// Should fetch fresh data
+	entries, err = getWorktreeListPorcelain()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries after reset, want 2", len(entries))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// getExistingWorktreeBranches
+// ---------------------------------------------------------------------------
+
+func TestGetExistingWorktreeBranchesSkipsMain(t *testing.T) {
+	mock := withMockGit(t)
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo\n" +
+			"HEAD abc123\n" +
+			"branch refs/heads/main\n" +
+			"\n" +
+			"worktree /tmp/wt/feature-a\n" +
+			"HEAD def456\n" +
+			"branch refs/heads/feature-a\n" +
+			"\n" +
+			"worktree /tmp/wt/feature-b\n" +
+			"HEAD ghi789\n" +
+			"branch refs/heads/feature-b\n" +
+			"\n")
+
+	branches, err := getExistingWorktreeBranches()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(branches) != 2 {
+		t.Fatalf("got %d branches, want 2", len(branches))
+	}
+	if branches[0] != "feature-a" || branches[1] != "feature-b" {
+		t.Errorf("branches = %v, want [feature-a, feature-b]", branches)
+	}
+}
+
+func TestGetExistingWorktreeBranchesSkipsDetached(t *testing.T) {
+	mock := withMockGit(t)
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo\n" +
+			"HEAD abc123\n" +
+			"branch refs/heads/main\n" +
+			"\n" +
+			"worktree /tmp/wt/detached\n" +
+			"HEAD deadbeef\n" +
+			"detached\n" +
+			"\n" +
+			"worktree /tmp/wt/feature\n" +
+			"HEAD def456\n" +
+			"branch refs/heads/feature\n" +
+			"\n")
+
+	branches, err := getExistingWorktreeBranches()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(branches) != 1 || branches[0] != "feature" {
+		t.Errorf("branches = %v, want [feature]", branches)
+	}
+}
+
+func TestGetExistingWorktreeBranchesError(t *testing.T) {
+	mock := withMockGit(t)
+	mock.errors["worktree list --porcelain"] = fmt.Errorf("git error")
+
+	_, err := getExistingWorktreeBranches()
+	if err == nil {
+		t.Fatal("expected error from getExistingWorktreeBranches")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // isDirEmpty
 // ---------------------------------------------------------------------------
 

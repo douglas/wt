@@ -258,7 +258,8 @@ func setupCheckoutMocks(mock *mockGitRunner) {
 	mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
 	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
 	mock.outputs["worktree list --porcelain"] = []byte(
-		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n")
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
+			"worktree /tmp/wt/feature\nHEAD def456\nbranch refs/heads/feature\n\n")
 	mock.outputs["worktree list"] = []byte(
 		"/tmp/repo abc123 [main]\n/tmp/wt/feature def456 [feature]\n")
 }
@@ -305,8 +306,10 @@ func TestCheckoutCmd_BranchDoesNotExist(t *testing.T) {
 	withAppConfig(t)
 	appCfg.OutputFormat = "text"
 	setupCheckoutMocks(mock)
-	// Override worktree list to NOT include new-branch
-	mock.outputs["worktree list"] = []byte("/tmp/repo abc123 [main]\n")
+	// Override porcelain to NOT include new-branch
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n")
+	resetWorktreeCache()
 	// Branch doesn't exist locally or remotely
 	mock.errors["show-ref --verify --quiet refs/heads/new-branch"] = fmt.Errorf("not found")
 	mock.errors["show-ref --verify --quiet refs/remotes/origin/new-branch"] = fmt.Errorf("not found")
@@ -372,8 +375,10 @@ func TestCreateCmd_NewBranch_Text(t *testing.T) {
 	appCfg.Root = tmpDir
 
 	setupCheckoutMocks(mock)
-	// Override worktree list to NOT include new-branch
-	mock.outputs["worktree list"] = []byte("/tmp/repo abc123 [main]\n")
+	// Override porcelain to NOT include new-branch
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n")
+	resetWorktreeCache()
 
 	// buildWorktreePath will produce <root>/repo/new-branch
 	expectedPath := filepath.Join(tmpDir, "repo", "new-branch")
@@ -399,7 +404,9 @@ func TestCreateCmd_NewBranch_JSON(t *testing.T) {
 	appCfg.Root = tmpDir
 
 	setupCheckoutMocks(mock)
-	mock.outputs["worktree list"] = []byte("/tmp/repo abc123 [main]\n")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n")
+	resetWorktreeCache()
 
 	expectedPath := filepath.Join(tmpDir, "repo", "new-branch")
 	mockKey := fmt.Sprintf("worktree add %s -b new-branch main", expectedPath)
@@ -425,7 +432,8 @@ func TestRemoveCmd_BranchNotFound(t *testing.T) {
 	mock := withMockGit(t)
 	withAppConfig(t)
 	appCfg.OutputFormat = "text"
-	mock.outputs["worktree list"] = []byte("/tmp/repo abc123 [main]\n")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n")
 
 	_, err := captureRunE(t, removeCmd, []string{"nonexistent"})
 	if err == nil {
@@ -457,7 +465,8 @@ func TestRemoveCmd_Success_Text(t *testing.T) {
 	mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
 	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
 	mock.outputs["worktree list --porcelain"] = []byte(
-		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n")
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
+			fmt.Sprintf("worktree %s\nHEAD def456\nbranch refs/heads/feature\n\n", featurePath))
 	mock.outputs["worktree list"] = []byte(
 		fmt.Sprintf("/tmp/repo abc123 [main]\n%s def456 [feature]\n", featurePath))
 
@@ -491,7 +500,8 @@ func TestRemoveCmd_Success_JSON(t *testing.T) {
 	mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
 	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
 	mock.outputs["worktree list --porcelain"] = []byte(
-		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n")
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
+			fmt.Sprintf("worktree %s\nHEAD def456\nbranch refs/heads/feature\n\n", featurePath))
 	mock.outputs["worktree list"] = []byte(
 		fmt.Sprintf("/tmp/repo abc123 [main]\n%s def456 [feature]\n", featurePath))
 
@@ -521,7 +531,8 @@ func TestCleanupCmd_NoCandidates_Text(t *testing.T) {
 
 	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
 	mock.outputs["branch --merged main --format=%(refname:short)"] = []byte("main\nmaster\n")
-	mock.outputs["worktree list"] = []byte("/tmp/repo abc123 [main]\n")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n")
 
 	out, err := captureRunE(t, cleanupCmd, nil)
 	if err != nil {
@@ -539,7 +550,8 @@ func TestCleanupCmd_NoCandidates_JSON(t *testing.T) {
 
 	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
 	mock.outputs["branch --merged main --format=%(refname:short)"] = []byte("main\nmaster\n")
-	mock.outputs["worktree list"] = []byte("/tmp/repo abc123 [main]\n")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n")
 
 	out, err := captureRunE(t, cleanupCmd, nil)
 	if err != nil {
@@ -578,8 +590,9 @@ func TestCleanupCmd_DryRun_Text(t *testing.T) {
 
 	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
 	mock.outputs["branch --merged main --format=%(refname:short)"] = []byte("main\nmaster\nfeature-done\n")
-	mock.outputs["worktree list"] = []byte(
-		fmt.Sprintf("/tmp/repo abc123 [main]\n%s def456 [feature-done]\n", featurePath))
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
+			fmt.Sprintf("worktree %s\nHEAD def456\nbranch refs/heads/feature-done\n\n", featurePath))
 
 	out, err := captureRunE(t, cleanupCmd, nil)
 	if err != nil {
@@ -607,8 +620,9 @@ func TestCleanupCmd_DryRun_JSON(t *testing.T) {
 
 	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
 	mock.outputs["branch --merged main --format=%(refname:short)"] = []byte("main\nmaster\nfeature-done\n")
-	mock.outputs["worktree list"] = []byte(
-		fmt.Sprintf("/tmp/repo abc123 [main]\n%s def456 [feature-done]\n", featurePath))
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
+			fmt.Sprintf("worktree %s\nHEAD def456\nbranch refs/heads/feature-done\n\n", featurePath))
 
 	out, err := captureRunE(t, cleanupCmd, nil)
 	if err != nil {
@@ -647,8 +661,9 @@ func TestCleanupCmd_Force_Text(t *testing.T) {
 
 	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
 	mock.outputs["branch --merged main --format=%(refname:short)"] = []byte("main\nmaster\nfeature-done\n")
-	mock.outputs["worktree list"] = []byte(
-		fmt.Sprintf("/tmp/repo abc123 [main]\n%s def456 [feature-done]\n", featurePath))
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
+			fmt.Sprintf("worktree %s\nHEAD def456\nbranch refs/heads/feature-done\n\n", featurePath))
 
 	// Mock worktree remove
 	mockKey := fmt.Sprintf("worktree remove %s", featurePath)
@@ -684,8 +699,9 @@ func TestCleanupCmd_Force_JSON(t *testing.T) {
 
 	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
 	mock.outputs["branch --merged main --format=%(refname:short)"] = []byte("main\nmaster\nfeature-done\n")
-	mock.outputs["worktree list"] = []byte(
-		fmt.Sprintf("/tmp/repo abc123 [main]\n%s def456 [feature-done]\n", featurePath))
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
+			fmt.Sprintf("worktree %s\nHEAD def456\nbranch refs/heads/feature-done\n\n", featurePath))
 
 	mockKey := fmt.Sprintf("worktree remove %s", featurePath)
 	mock.outputs[mockKey] = []byte("")

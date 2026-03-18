@@ -91,6 +91,7 @@ var checkoutCmd = &cobra.Command{
 		if err := gitCmd.Run(); err != nil {
 			return fmt.Errorf("failed to create worktree: %w", err)
 		}
+		resetWorktreeCache()
 
 		// Run post-checkout hooks (warn only)
 		_ = runHooks("post_checkout", getHooks("post_checkout"), hookEnv)
@@ -164,6 +165,7 @@ var createCmd = &cobra.Command{
 		if err := gitCmd.Run(); err != nil {
 			return fmt.Errorf("failed to create worktree: %w", err)
 		}
+		resetWorktreeCache()
 
 		// Run post-create hooks (warn only)
 		_ = runHooks("post_create", getHooks("post_create"), hookEnv)
@@ -374,6 +376,7 @@ var removeCmd = &cobra.Command{
 		if err := gitCmd.Run(); err != nil {
 			return fmt.Errorf("failed to remove worktree: %w", err)
 		}
+		resetWorktreeCache()
 
 		if err := cleanupWorktreePath(existingPath); err != nil {
 			return err
@@ -510,6 +513,7 @@ Examples:
 				fmt.Printf("  Failed to remove %s: %v\n", branch, err)
 				continue
 			}
+			resetWorktreeCache()
 
 			if err := cleanupWorktreePath(existingPath); err != nil {
 				if jsonMode {
@@ -527,6 +531,7 @@ Examples:
 		// Run prune at the end
 		pruneGitCmd := gitCmd.Command("worktree", "prune")
 		_ = pruneGitCmd.Run()
+		resetWorktreeCache()
 
 		if jsonMode {
 			return emitJSONSuccess(cmd, map[string]any{"dry_run": false, "base": base, "removed": removed, "skipped": skipped})
@@ -549,6 +554,7 @@ var pruneCmd = &cobra.Command{
 		if err := gitCmd.Run(); err != nil {
 			return err
 		}
+		resetWorktreeCache()
 
 		if isJSONOutput() {
 			return emitJSONSuccess(cmd, map[string]any{"status": "pruned"})
