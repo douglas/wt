@@ -54,6 +54,18 @@ func TestDetectShell(t *testing.T) {
 			envShell: "/bin/bash",
 			want:     "bash",
 		},
+		{
+			name:     "unknown shell falls back to env detection",
+			args:     []string{"fish"},
+			envShell: "/bin/zsh",
+			want:     "zsh",
+		},
+		{
+			name:     "unknown shell with no env falls back to bash",
+			args:     []string{"fish"},
+			envShell: "/bin/sh",
+			want:     "bash",
+		},
 	}
 
 	for _, tt := range tests {
@@ -414,6 +426,104 @@ func TestInstallShellConfigDryRunUpdateExisting(t *testing.T) {
 	}
 }
 
+func TestInstallShellConfigUnsupportedShell(t *testing.T) {
+	err := installShellConfig("/tmp/test", "fish", false, true)
+	if err == nil {
+		t.Fatal("expected error for unsupported shell")
+	}
+	if !strings.Contains(err.Error(), "unsupported shell") {
+		t.Errorf("error = %q, want it to contain 'unsupported shell'", err.Error())
+	}
+}
+
+func TestInstallShellConfigShowsActivation(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+
+	// Capture stdout to verify activation message
+	output := captureStdout(t, func() {
+		if err := installShellConfig(configPath, "bash", false, false); err != nil {
+			t.Fatalf("installShellConfig failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "source") {
+		t.Errorf("expected activation instructions with 'source', got: %s", output)
+	}
+}
+
+func TestInstallShellConfigPowershellActivation(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "profile.ps1")
+
+	output := captureStdout(t, func() {
+		if err := installShellConfig(configPath, "powershell", false, false); err != nil {
+			t.Fatalf("installShellConfig failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "$PROFILE") {
+		t.Errorf("expected powershell activation with '$PROFILE', got: %s", output)
+	}
+}
+
+func TestInstallShellConfigUpdateExisting(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+
+	// First install
+	if err := installShellConfig(configPath, "bash", false, true); err != nil {
+		t.Fatalf("first install failed: %v", err)
+	}
+
+	// Update (not dry run) - should update the existing block
+	output := captureStdout(t, func() {
+		if err := installShellConfig(configPath, "bash", false, true); err != nil {
+			t.Fatalf("update install failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "Updated") {
+		t.Errorf("expected 'Updated' in output, got: %s", output)
+	}
+
+	content, _ := os.ReadFile(configPath)
+	count := strings.Count(string(content), markerStart)
+	if count != 1 {
+		t.Errorf("expected 1 marker occurrence, got %d", count)
+	}
+}
+
+func TestRemoveShellConfigNonexistentFile(t *testing.T) {
+	output := captureStdout(t, func() {
+		err := removeShellConfig("/nonexistent/path/.bashrc", "bash", false)
+		if err != nil {
+			t.Fatalf("expected no error for nonexistent file, got: %v", err)
+		}
+	})
+	if !strings.Contains(output, "No configuration found") {
+		t.Errorf("expected 'No configuration found', got: %s", output)
+	}
+}
+
+func TestRemoveShellConfigNoMarkers(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+	if err := os.WriteFile(configPath, []byte("# some config\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := captureStdout(t, func() {
+		err := removeShellConfig(configPath, "bash", false)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+	})
+	if !strings.Contains(output, "No wt configuration found") {
+		t.Errorf("expected 'No wt configuration found', got: %s", output)
+	}
+}
+
 func TestInitJSONOutput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping init JSON integration test in short mode")
@@ -494,6 +604,48 @@ func TestGetShellConfigPathUnknown(t *testing.T) {
 	got := getShellConfigPath("fish")
 	if got != "" {
 		t.Errorf("getShellConfigPath(\"fish\") = %q, want empty string", got)
+	}
+}
+
+func TestGetShellConfigPathPowershellProfile(t *testing.T) {
+	profilePath := "/custom/profile.ps1"
+	t.Setenv("PROFILE", profilePath)
+
+	got := getShellConfigPath("powershell")
+	if got != profilePath {
+		t.Errorf("getShellConfigPath(\"powershell\") = %q, want %q (from $PROFILE)", got, profilePath)
+	}
+}
+
+func TestGetShellConfigPathBashFallback(t *testing.T) {
+	// When .bashrc doesn't exist, bash falls back to .bashrc on non-macOS
+	// or .bash_profile on macOS
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	got := getShellConfigPath("bash")
+	if runtime.GOOS == "darwin" {
+		want := filepath.Join(tmpDir, ".bash_profile")
+		if got != want {
+			t.Errorf("getShellConfigPath(\"bash\") on darwin = %q, want %q", got, want)
+		}
+	} else {
+		want := filepath.Join(tmpDir, ".bashrc")
+		if got != want {
+			t.Errorf("getShellConfigPath(\"bash\") on linux = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestGetShellConfigPathZdotdirRelative(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("ZDOTDIR", "custom-zsh")
+
+	got := getShellConfigPath("zsh")
+	want := filepath.Join(tmpDir, "custom-zsh", ".zshrc")
+	if got != want {
+		t.Errorf("getShellConfigPath(\"zsh\") with relative ZDOTDIR = %q, want %q", got, want)
 	}
 }
 

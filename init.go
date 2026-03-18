@@ -249,7 +249,7 @@ func installShellConfig(configPath, shell string, dryRun, noPrompt bool) error {
 				return nil
 			}
 
-			if err := os.WriteFile(configPath, []byte(newContent), 0644); err != nil {
+			if err := os.WriteFile(configPath, []byte(newContent), 0644); err != nil { //nolint:gosec // shell config should be world-readable
 				return fmt.Errorf("failed to write %s: %v", configPath, err)
 			}
 			if !jsonMode {
@@ -365,7 +365,7 @@ func removeShellConfig(configPath, shell string, dryRun bool) error {
 		return nil
 	}
 
-	if err := os.WriteFile(configPath, []byte(newContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(newContent), 0644); err != nil { //nolint:gosec // shell config should be world-readable
 		return fmt.Errorf("failed to write %s: %v", configPath, err)
 	}
 

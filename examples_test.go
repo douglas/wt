@@ -323,6 +323,43 @@ func TestRenderExamplesTextPrintsAllListItems(t *testing.T) {
 	}
 }
 
+func TestOrderedTopics(t *testing.T) {
+	topics := orderedTopics()
+	if len(topics) == 0 {
+		t.Fatal("orderedTopics() returned empty slice")
+	}
+	if len(topics) != len(exampleCatalog) {
+		t.Errorf("orderedTopics() returned %d topics, want %d", len(topics), len(exampleCatalog))
+	}
+	// Verify sorted order by checking names are alphabetical
+	for i := 1; i < len(topics); i++ {
+		if topics[i].Name < topics[i-1].Name {
+			t.Errorf("topics not sorted: %q comes after %q", topics[i].Name, topics[i-1].Name)
+		}
+	}
+}
+
+func TestSplitLines(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  int
+	}{
+		{"empty", "", 0},
+		{"single line", "hello", 1},
+		{"two lines", "hello\nworld", 2},
+		{"trailing newline", "hello\n", 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitLines(tt.input)
+			if len(got) != tt.want {
+				t.Errorf("splitLines(%q) returned %d items, want %d", tt.input, len(got), tt.want)
+			}
+		})
+	}
+}
+
 func TestRenderExamplesTextIncludesStrategyPathExamples(t *testing.T) {
 	output := captureStdout(t, func() {
 		renderExamplesText([]exampleTopic{exampleCatalog["create"]})

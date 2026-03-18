@@ -545,6 +545,73 @@ func TestConfigShowPatternParityBetweenTextAndJSON_Config(t *testing.T) {
 	}
 }
 
+func TestParseConfigFileWithHooksAndSections(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.toml")
+	content := `root = "/custom/root"
+strategy = "global"
+separator = "-"
+
+[hooks]
+pre_create = ["echo pre"]
+post_create = ["echo post"]
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := parseConfigFile(cfgPath)
+	if err != nil {
+		t.Fatalf("parseConfigFile() error = %v", err)
+	}
+	if cfg.Root != "/custom/root" {
+		t.Errorf("Root = %q, want %q", cfg.Root, "/custom/root")
+	}
+	if cfg.Strategy != "global" {
+		t.Errorf("Strategy = %q, want %q", cfg.Strategy, "global")
+	}
+	if cfg.Separator != "-" {
+		t.Errorf("Separator = %q, want %q", cfg.Separator, "-")
+	}
+	if len(cfg.Hooks.PreCreate) != 1 || cfg.Hooks.PreCreate[0] != "echo pre" {
+		t.Errorf("Hooks.PreCreate = %v, want [echo pre]", cfg.Hooks.PreCreate)
+	}
+	if len(cfg.Hooks.PostCreate) != 1 || cfg.Hooks.PostCreate[0] != "echo post" {
+		t.Errorf("Hooks.PostCreate = %v, want [echo post]", cfg.Hooks.PostCreate)
+	}
+}
+
+func TestParseConfigFileIgnoresInvalidLines(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.toml")
+	content := `# comment
+root = "/root"
+this line has no equals sign
+strategy = "global"
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := parseConfigFile(cfgPath)
+	if err != nil {
+		t.Fatalf("parseConfigFile() error = %v", err)
+	}
+	if cfg.Root != "/root" {
+		t.Errorf("Root = %q, want %q", cfg.Root, "/root")
+	}
+	if cfg.Strategy != "global" {
+		t.Errorf("Strategy = %q, want %q", cfg.Strategy, "global")
+	}
+}
+
+func TestParseConfigFileNonexistent(t *testing.T) {
+	_, err := parseConfigFile("/nonexistent/path/config.toml")
+	if err == nil {
+		t.Fatal("expected error for nonexistent file")
+	}
+}
+
 func TestParseStringArray(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -340,7 +340,7 @@ func writeDefaultConfig(path string, force bool) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	if err := os.WriteFile(path, []byte(defaultConfigTemplate), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(defaultConfigTemplate), 0o644); err != nil { //nolint:gosec // config file should be world-readable
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
