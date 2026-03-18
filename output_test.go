@@ -10,26 +10,26 @@ import (
 )
 
 func TestValidateOutputFormat(t *testing.T) {
-	original := outputFormat
-	t.Cleanup(func() { outputFormat = original })
+	original := appCfg.OutputFormat
+	t.Cleanup(func() { appCfg.OutputFormat = original })
 
-	outputFormat = "JSON"
+	appCfg.OutputFormat = "JSON"
 	if err := validateOutputFormat(); err != nil {
 		t.Fatalf("validateOutputFormat() unexpected error: %v", err)
 	}
-	if outputFormat != "json" {
-		t.Fatalf("validateOutputFormat() normalized format = %q, want %q", outputFormat, "json")
+	if appCfg.OutputFormat != "json" {
+		t.Fatalf("validateOutputFormat() normalized format = %q, want %q", appCfg.OutputFormat, "json")
 	}
 
-	outputFormat = "yaml"
+	appCfg.OutputFormat = "yaml"
 	if err := validateOutputFormat(); err == nil {
 		t.Fatal("validateOutputFormat() expected error for unsupported format")
 	}
 }
 
 func TestPrintCDMarkerSkipsJSONOutput(t *testing.T) {
-	original := outputFormat
-	t.Cleanup(func() { outputFormat = original })
+	original := appCfg.OutputFormat
+	t.Cleanup(func() { appCfg.OutputFormat = original })
 
 	origStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -39,7 +39,7 @@ func TestPrintCDMarkerSkipsJSONOutput(t *testing.T) {
 	os.Stdout = w
 	t.Cleanup(func() { os.Stdout = origStdout })
 
-	outputFormat = "json"
+	appCfg.OutputFormat = "json"
 	printCDMarker("/tmp/worktree")
 
 	_ = w.Close()
@@ -54,9 +54,9 @@ func TestPrintCDMarkerSkipsJSONOutput(t *testing.T) {
 }
 
 func TestEmitJSONSuccess(t *testing.T) {
-	original := outputFormat
-	t.Cleanup(func() { outputFormat = original })
-	outputFormat = "json"
+	original := appCfg.OutputFormat
+	t.Cleanup(func() { appCfg.OutputFormat = original })
+	appCfg.OutputFormat = "json"
 
 	origStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -97,9 +97,9 @@ func TestEmitJSONSuccess(t *testing.T) {
 }
 
 func TestRootHelpUsesJSONFormat(t *testing.T) {
-	original := outputFormat
-	t.Cleanup(func() { outputFormat = original })
-	outputFormat = "json"
+	original := appCfg.OutputFormat
+	t.Cleanup(func() { appCfg.OutputFormat = original })
+	appCfg.OutputFormat = "json"
 
 	origStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -126,9 +126,9 @@ func TestRootHelpUsesJSONFormat(t *testing.T) {
 }
 
 func TestConfigHelpUsesJSONFormat(t *testing.T) {
-	original := outputFormat
-	t.Cleanup(func() { outputFormat = original })
-	outputFormat = "json"
+	original := appCfg.OutputFormat
+	t.Cleanup(func() { appCfg.OutputFormat = original })
+	appCfg.OutputFormat = "json"
 
 	origStdout := os.Stdout
 	r, w, err := os.Pipe()

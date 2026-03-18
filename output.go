@@ -14,8 +14,6 @@ const (
 	formatJSON = "json"
 )
 
-var outputFormat = formatText
-
 type jsonEnvelope struct {
 	OK      bool   `json:"ok"`
 	Command string `json:"command"`
@@ -24,17 +22,17 @@ type jsonEnvelope struct {
 }
 
 func isJSONOutput() bool {
-	return strings.EqualFold(strings.TrimSpace(outputFormat), formatJSON)
+	return strings.EqualFold(strings.TrimSpace(appCfg.OutputFormat), formatJSON)
 }
 
 func validateOutputFormat() error {
-	trimmed := strings.ToLower(strings.TrimSpace(outputFormat))
+	trimmed := strings.ToLower(strings.TrimSpace(appCfg.OutputFormat))
 	switch trimmed {
 	case formatText, formatJSON:
-		outputFormat = trimmed
+		appCfg.OutputFormat = trimmed
 		return nil
 	default:
-		return fmt.Errorf("unsupported --format value %q (supported: text, json)", outputFormat)
+		return fmt.Errorf("unsupported --format value %q (supported: text, json)", appCfg.OutputFormat)
 	}
 }
 

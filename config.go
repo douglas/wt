@@ -41,17 +41,23 @@ type configSource struct {
 	Separator string
 }
 
-// configFilePath is the resolved path to the config file (set during loading).
-var configFilePath string
+// AppConfig holds all resolved configuration state for the application.
+type AppConfig struct {
+	Root            string
+	Strategy        string
+	Pattern         string
+	Separator       string
+	Hooks           Hooks
+	ConfigFilePath  string
+	ConfigFileFound bool
+	ConfigSources   configSource
+	OutputFormat    string
+}
 
-// configFileFound indicates whether the config file was found during loading.
-var configFileFound bool
-
-// configSources tracks the origin of each resolved value.
-var configSources configSource
-
-// worktreeHooks holds the loaded hook configuration.
-var worktreeHooks Hooks
+// appCfg is the package-level application configuration.
+var appCfg = AppConfig{
+	OutputFormat: formatText,
+}
 
 // configFlag is the --config flag value (set by cobra).
 var configFlag string
@@ -129,12 +135,12 @@ func loadWorktreeConfig() {
 	home, _ := os.UserHomeDir()
 	defaultRoot := filepath.Join(home, "dev", "worktrees")
 
-	worktreeRoot = defaultRoot
-	worktreeStrategy = "global"
-	worktreePattern = ""
-	worktreeSeparator = "/"
+	appCfg.Root = defaultRoot
+	appCfg.Strategy = "global"
+	appCfg.Pattern = ""
+	appCfg.Separator = "/"
 
-	configSources = configSource{
+	appCfg.ConfigSources = configSource{
 		Root:      "default",
 		Strategy:  "default",
 		Pattern:   "default",
@@ -142,52 +148,52 @@ func loadWorktreeConfig() {
 	}
 
 	// Reset hooks
-	worktreeHooks = Hooks{}
+	appCfg.Hooks = Hooks{}
 
 	// 2. Load config file
-	configFilePath = resolveConfigPath(configFlag)
-	configFileFound = false
+	appCfg.ConfigFilePath = resolveConfigPath(configFlag)
+	appCfg.ConfigFileFound = false
 
-	if _, err := os.Stat(configFilePath); err == nil {
-		configFileFound = true
+	if _, err := os.Stat(appCfg.ConfigFilePath); err == nil {
+		appCfg.ConfigFileFound = true
 		var cfg Config
-		if _, err := toml.DecodeFile(configFilePath, &cfg); err == nil {
+		if _, err := toml.DecodeFile(appCfg.ConfigFilePath, &cfg); err == nil {
 			if cfg.Root != "" {
-				worktreeRoot = expandHome(cfg.Root)
-				configSources.Root = "config file"
+				appCfg.Root = expandHome(cfg.Root)
+				appCfg.ConfigSources.Root = "config file"
 			}
 			if cfg.Strategy != "" {
-				worktreeStrategy = strings.ToLower(strings.TrimSpace(cfg.Strategy))
-				configSources.Strategy = "config file"
+				appCfg.Strategy = strings.ToLower(strings.TrimSpace(cfg.Strategy))
+				appCfg.ConfigSources.Strategy = "config file"
 			}
 			if cfg.Pattern != "" {
-				worktreePattern = strings.TrimSpace(cfg.Pattern)
-				configSources.Pattern = "config file"
+				appCfg.Pattern = strings.TrimSpace(cfg.Pattern)
+				appCfg.ConfigSources.Pattern = "config file"
 			}
 			if cfg.Separator != "" {
-				worktreeSeparator = cfg.Separator
-				configSources.Separator = "config file"
+				appCfg.Separator = cfg.Separator
+				appCfg.ConfigSources.Separator = "config file"
 			}
-			worktreeHooks = cfg.Hooks
+			appCfg.Hooks = cfg.Hooks
 		}
 	}
 
 	// 3. Environment variables override config file
 	if v := os.Getenv("WORKTREE_ROOT"); v != "" {
-		worktreeRoot = v
-		configSources.Root = "env: WORKTREE_ROOT"
+		appCfg.Root = v
+		appCfg.ConfigSources.Root = "env: WORKTREE_ROOT"
 	}
 	if v := os.Getenv("WORKTREE_STRATEGY"); v != "" {
-		worktreeStrategy = strings.ToLower(strings.TrimSpace(v))
-		configSources.Strategy = "env: WORKTREE_STRATEGY"
+		appCfg.Strategy = strings.ToLower(strings.TrimSpace(v))
+		appCfg.ConfigSources.Strategy = "env: WORKTREE_STRATEGY"
 	}
 	if v := os.Getenv("WORKTREE_PATTERN"); v != "" {
-		worktreePattern = strings.TrimSpace(v)
-		configSources.Pattern = "env: WORKTREE_PATTERN"
+		appCfg.Pattern = strings.TrimSpace(v)
+		appCfg.ConfigSources.Pattern = "env: WORKTREE_PATTERN"
 	}
 	if v, ok := os.LookupEnv("WORKTREE_SEPARATOR"); ok {
-		worktreeSeparator = v
-		configSources.Separator = "env: WORKTREE_SEPARATOR"
+		appCfg.Separator = v
+		appCfg.ConfigSources.Separator = "env: WORKTREE_SEPARATOR"
 	}
 }
 

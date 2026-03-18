@@ -23,16 +23,16 @@ func BenchmarkParseRemoteURL_SCP(b *testing.B) {
 func BenchmarkRenderWorktreePath(b *testing.B) {
 	b.ReportAllocs()
 
-	oldPattern := worktreePattern
-	oldSeparator := worktreeSeparator
-	oldRoot := worktreeRoot
-	worktreePattern = "{.worktreeRoot}/{.repo.Name}/{.branch}"
-	worktreeSeparator = "-"
-	worktreeRoot = "/tmp/wt-bench"
+	oldPattern := appCfg.Pattern
+	oldSeparator := appCfg.Separator
+	oldRoot := appCfg.Root
+	appCfg.Pattern = "{.worktreeRoot}/{.repo.Name}/{.branch}"
+	appCfg.Separator = "-"
+	appCfg.Root = "/tmp/wt-bench"
 	defer func() {
-		worktreePattern = oldPattern
-		worktreeSeparator = oldSeparator
-		worktreeRoot = oldRoot
+		appCfg.Pattern = oldPattern
+		appCfg.Separator = oldSeparator
+		appCfg.Root = oldRoot
 	}()
 
 	info := repoInfo{
@@ -52,13 +52,13 @@ func BenchmarkRenderWorktreePath(b *testing.B) {
 func BenchmarkResolveWorktreePattern(b *testing.B) {
 	b.ReportAllocs()
 
-	oldStrategy := worktreeStrategy
-	oldPattern := worktreePattern
-	worktreeStrategy = "global"
-	worktreePattern = ""
+	oldStrategy := appCfg.Strategy
+	oldPattern := appCfg.Pattern
+	appCfg.Strategy = "global"
+	appCfg.Pattern = ""
 	defer func() {
-		worktreeStrategy = oldStrategy
-		worktreePattern = oldPattern
+		appCfg.Strategy = oldStrategy
+		appCfg.Pattern = oldPattern
 	}()
 
 	b.ResetTimer()

@@ -8,13 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	version           = "dev"
-	worktreeRoot      string
-	worktreeStrategy  string
-	worktreePattern   string
-	worktreeSeparator string
-)
+var version = "dev"
 
 func init() {
 	loadWorktreeConfig()
@@ -60,7 +54,7 @@ func printCommandHelp(cmd *cobra.Command) error {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&configFlag, "config", "", "Path to config file (default: ~/.config/wt/config.toml)")
-	rootCmd.PersistentFlags().StringVar(&outputFormat, "format", formatText, "Output format: text or json")
+	rootCmd.PersistentFlags().StringVar(&appCfg.OutputFormat, "format", formatText, "Output format: text or json")
 
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
@@ -109,7 +103,7 @@ func init() {
 func buildRootCmdLong() string {
 	pattern, err := resolveWorktreePattern()
 	if err != nil {
-		pattern = worktreePattern
+		pattern = appCfg.Pattern
 		if pattern == "" {
 			pattern = "unknown"
 		}
@@ -123,8 +117,8 @@ Root:     %s
 
 Run 'wt info' to see available strategies and pattern variables.
 Set WORKTREE_ROOT, WORKTREE_STRATEGY, and WORKTREE_PATTERN to customize.`,
-		worktreeStrategy,
+		appCfg.Strategy,
 		pattern,
-		worktreeRoot,
+		appCfg.Root,
 	)
 }

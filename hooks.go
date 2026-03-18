@@ -12,25 +12,25 @@ import (
 func getHooks(hookName string) []string {
 	switch hookName {
 	case "pre_create":
-		return worktreeHooks.PreCreate
+		return appCfg.Hooks.PreCreate
 	case "post_create":
-		return worktreeHooks.PostCreate
+		return appCfg.Hooks.PostCreate
 	case "pre_checkout":
-		return worktreeHooks.PreCheckout
+		return appCfg.Hooks.PreCheckout
 	case "post_checkout":
-		return worktreeHooks.PostCheckout
+		return appCfg.Hooks.PostCheckout
 	case "pre_remove":
-		return worktreeHooks.PreRemove
+		return appCfg.Hooks.PreRemove
 	case "post_remove":
-		return worktreeHooks.PostRemove
+		return appCfg.Hooks.PostRemove
 	case "pre_pr":
-		return worktreeHooks.PrePR
+		return appCfg.Hooks.PrePR
 	case "post_pr":
-		return worktreeHooks.PostPR
+		return appCfg.Hooks.PostPR
 	case "pre_mr":
-		return worktreeHooks.PreMR
+		return appCfg.Hooks.PreMR
 	case "post_mr":
-		return worktreeHooks.PostMR
+		return appCfg.Hooks.PostMR
 	default:
 		return nil
 	}

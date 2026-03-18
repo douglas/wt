@@ -207,26 +207,26 @@ func TestWriteDefaultConfig(t *testing.T) {
 
 func TestLoadWorktreeConfig(t *testing.T) {
 	// Save original state
-	origRoot := worktreeRoot
-	origStrategy := worktreeStrategy
-	origPattern := worktreePattern
+	origRoot := appCfg.Root
+	origStrategy := appCfg.Strategy
+	origPattern := appCfg.Pattern
 	origConfigFlag := configFlag
-	origConfigFilePath := configFilePath
-	origConfigFileFound := configFileFound
-	origConfigSources := configSources
+	origConfigFilePath := appCfg.ConfigFilePath
+	origConfigFileFound := appCfg.ConfigFileFound
+	origConfigSources := appCfg.ConfigSources
 	origEnvRoot := os.Getenv("WORKTREE_ROOT")
 	origEnvStrategy := os.Getenv("WORKTREE_STRATEGY")
 	origEnvPattern := os.Getenv("WORKTREE_PATTERN")
 	origEnvConfig := os.Getenv("WT_CONFIG")
 
 	t.Cleanup(func() {
-		worktreeRoot = origRoot
-		worktreeStrategy = origStrategy
-		worktreePattern = origPattern
+		appCfg.Root = origRoot
+		appCfg.Strategy = origStrategy
+		appCfg.Pattern = origPattern
 		configFlag = origConfigFlag
-		configFilePath = origConfigFilePath
-		configFileFound = origConfigFileFound
-		configSources = origConfigSources
+		appCfg.ConfigFilePath = origConfigFilePath
+		appCfg.ConfigFileFound = origConfigFileFound
+		appCfg.ConfigSources = origConfigSources
 		os.Setenv("WORKTREE_ROOT", origEnvRoot)
 		os.Setenv("WORKTREE_STRATEGY", origEnvStrategy)
 		os.Setenv("WORKTREE_PATTERN", origEnvPattern)
@@ -244,20 +244,20 @@ func TestLoadWorktreeConfig(t *testing.T) {
 
 		home, _ := os.UserHomeDir()
 		expectedRoot := filepath.Join(home, "dev", "worktrees")
-		if worktreeRoot != expectedRoot {
-			t.Errorf("worktreeRoot = %q, want %q", worktreeRoot, expectedRoot)
+		if appCfg.Root != expectedRoot {
+			t.Errorf("worktreeRoot = %q, want %q", appCfg.Root, expectedRoot)
 		}
-		if worktreeStrategy != "global" {
-			t.Errorf("worktreeStrategy = %q, want global", worktreeStrategy)
+		if appCfg.Strategy != "global" {
+			t.Errorf("worktreeStrategy = %q, want global", appCfg.Strategy)
 		}
-		if worktreePattern != "" {
-			t.Errorf("worktreePattern = %q, want empty", worktreePattern)
+		if appCfg.Pattern != "" {
+			t.Errorf("worktreePattern = %q, want empty", appCfg.Pattern)
 		}
-		if configFileFound {
+		if appCfg.ConfigFileFound {
 			t.Error("configFileFound should be false for nonexistent file")
 		}
-		if configSources.Root != "default" {
-			t.Errorf("configSources.Root = %q, want default", configSources.Root)
+		if appCfg.ConfigSources.Root != "default" {
+			t.Errorf("configSources.Root = %q, want default", appCfg.ConfigSources.Root)
 		}
 	})
 
@@ -280,23 +280,23 @@ pattern = "{.worktreeRoot}/custom/{.branch}"
 
 		loadWorktreeConfig()
 
-		if worktreeRoot != "/custom/worktrees" {
-			t.Errorf("worktreeRoot = %q, want /custom/worktrees", worktreeRoot)
+		if appCfg.Root != "/custom/worktrees" {
+			t.Errorf("worktreeRoot = %q, want /custom/worktrees", appCfg.Root)
 		}
-		if worktreeStrategy != "sibling-repo" {
-			t.Errorf("worktreeStrategy = %q, want sibling-repo", worktreeStrategy)
+		if appCfg.Strategy != "sibling-repo" {
+			t.Errorf("worktreeStrategy = %q, want sibling-repo", appCfg.Strategy)
 		}
-		if worktreePattern != "{.worktreeRoot}/custom/{.branch}" {
-			t.Errorf("worktreePattern = %q, want {.worktreeRoot}/custom/{.branch}", worktreePattern)
+		if appCfg.Pattern != "{.worktreeRoot}/custom/{.branch}" {
+			t.Errorf("worktreePattern = %q, want {.worktreeRoot}/custom/{.branch}", appCfg.Pattern)
 		}
-		if !configFileFound {
+		if !appCfg.ConfigFileFound {
 			t.Error("configFileFound should be true")
 		}
-		if configSources.Root != "config file" {
-			t.Errorf("configSources.Root = %q, want 'config file'", configSources.Root)
+		if appCfg.ConfigSources.Root != "config file" {
+			t.Errorf("configSources.Root = %q, want 'config file'", appCfg.ConfigSources.Root)
 		}
-		if configSources.Strategy != "config file" {
-			t.Errorf("configSources.Strategy = %q, want 'config file'", configSources.Strategy)
+		if appCfg.ConfigSources.Strategy != "config file" {
+			t.Errorf("configSources.Strategy = %q, want 'config file'", appCfg.ConfigSources.Strategy)
 		}
 	})
 
@@ -318,17 +318,17 @@ strategy = "global"
 
 		loadWorktreeConfig()
 
-		if worktreeRoot != "/env/worktrees" {
-			t.Errorf("worktreeRoot = %q, want /env/worktrees", worktreeRoot)
+		if appCfg.Root != "/env/worktrees" {
+			t.Errorf("worktreeRoot = %q, want /env/worktrees", appCfg.Root)
 		}
-		if worktreeStrategy != "parent-branches" {
-			t.Errorf("worktreeStrategy = %q, want parent-branches", worktreeStrategy)
+		if appCfg.Strategy != "parent-branches" {
+			t.Errorf("worktreeStrategy = %q, want parent-branches", appCfg.Strategy)
 		}
-		if configSources.Root != "env: WORKTREE_ROOT" {
-			t.Errorf("configSources.Root = %q, want 'env: WORKTREE_ROOT'", configSources.Root)
+		if appCfg.ConfigSources.Root != "env: WORKTREE_ROOT" {
+			t.Errorf("configSources.Root = %q, want 'env: WORKTREE_ROOT'", appCfg.ConfigSources.Root)
 		}
-		if configSources.Strategy != "env: WORKTREE_STRATEGY" {
-			t.Errorf("configSources.Strategy = %q, want 'env: WORKTREE_STRATEGY'", configSources.Strategy)
+		if appCfg.ConfigSources.Strategy != "env: WORKTREE_STRATEGY" {
+			t.Errorf("configSources.Strategy = %q, want 'env: WORKTREE_STRATEGY'", appCfg.ConfigSources.Strategy)
 		}
 	})
 
@@ -353,11 +353,11 @@ strategy = "global"
 
 		loadWorktreeConfig()
 
-		if worktreeStrategy != "sibling-repo" {
-			t.Errorf("worktreeStrategy = %q, want sibling-repo (from flag config)", worktreeStrategy)
+		if appCfg.Strategy != "sibling-repo" {
+			t.Errorf("worktreeStrategy = %q, want sibling-repo (from flag config)", appCfg.Strategy)
 		}
-		if configFilePath != flagCfg {
-			t.Errorf("configFilePath = %q, want %q", configFilePath, flagCfg)
+		if appCfg.ConfigFilePath != flagCfg {
+			t.Errorf("configFilePath = %q, want %q", appCfg.ConfigFilePath, flagCfg)
 		}
 	})
 
@@ -380,8 +380,8 @@ strategy = "global"
 
 		home, _ := os.UserHomeDir()
 		expected := filepath.Join(home, "my-worktrees")
-		if worktreeRoot != expected {
-			t.Errorf("worktreeRoot = %q, want %q", worktreeRoot, expected)
+		if appCfg.Root != expected {
+			t.Errorf("worktreeRoot = %q, want %q", appCfg.Root, expected)
 		}
 	})
 
@@ -402,31 +402,31 @@ strategy = "global"
 
 		loadWorktreeConfig()
 
-		if worktreeStrategy != "sibling-repo" {
-			t.Errorf("worktreeStrategy = %q, want sibling-repo", worktreeStrategy)
+		if appCfg.Strategy != "sibling-repo" {
+			t.Errorf("worktreeStrategy = %q, want sibling-repo", appCfg.Strategy)
 		}
 	})
 }
 
 func TestConfigShowPatternParityBetweenTextAndJSON_Config(t *testing.T) {
-	origRoot := worktreeRoot
-	origStrategy := worktreeStrategy
-	origPattern := worktreePattern
-	origSeparator := worktreeSeparator
-	origConfigFilePath := configFilePath
-	origConfigFileFound := configFileFound
-	origConfigSources := configSources
-	origOutputFormat := outputFormat
+	origRoot := appCfg.Root
+	origStrategy := appCfg.Strategy
+	origPattern := appCfg.Pattern
+	origSeparator := appCfg.Separator
+	origConfigFilePath := appCfg.ConfigFilePath
+	origConfigFileFound := appCfg.ConfigFileFound
+	origConfigSources := appCfg.ConfigSources
+	origOutputFormat := appCfg.OutputFormat
 
 	t.Cleanup(func() {
-		worktreeRoot = origRoot
-		worktreeStrategy = origStrategy
-		worktreePattern = origPattern
-		worktreeSeparator = origSeparator
-		configFilePath = origConfigFilePath
-		configFileFound = origConfigFileFound
-		configSources = origConfigSources
-		outputFormat = origOutputFormat
+		appCfg.Root = origRoot
+		appCfg.Strategy = origStrategy
+		appCfg.Pattern = origPattern
+		appCfg.Separator = origSeparator
+		appCfg.ConfigFilePath = origConfigFilePath
+		appCfg.ConfigFileFound = origConfigFileFound
+		appCfg.ConfigSources = origConfigSources
+		appCfg.OutputFormat = origOutputFormat
 	})
 
 	runConfigShow := func(t *testing.T, format string) string {
@@ -442,7 +442,7 @@ func TestConfigShowPatternParityBetweenTextAndJSON_Config(t *testing.T) {
 			os.Stdout = origStdout
 		}()
 
-		outputFormat = format
+		appCfg.OutputFormat = format
 		if err := configShowCmd.RunE(configShowCmd, nil); err != nil {
 			t.Fatalf("config show failed for format %s: %v", format, err)
 		}
@@ -491,13 +491,13 @@ func TestConfigShowPatternParityBetweenTextAndJSON_Config(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			worktreeRoot = "/tmp/worktrees"
-			worktreeStrategy = tt.strategy
-			worktreePattern = tt.workPattern
-			worktreeSeparator = "-"
-			configFilePath = "/tmp/config.toml"
-			configFileFound = true
-			configSources = configSource{
+			appCfg.Root = "/tmp/worktrees"
+			appCfg.Strategy = tt.strategy
+			appCfg.Pattern = tt.workPattern
+			appCfg.Separator = "-"
+			appCfg.ConfigFilePath = "/tmp/config.toml"
+			appCfg.ConfigFileFound = true
+			appCfg.ConfigSources = configSource{
 				Root:      "config file",
 				Strategy:  "config file",
 				Pattern:   tt.patternSource,

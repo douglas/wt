@@ -861,19 +861,19 @@ func TestParseGitLabBranchName(t *testing.T) {
 }
 
 func TestBuildWorktreePathCreatesMissingRoot(t *testing.T) {
-	originalRoot := worktreeRoot
-	originalStrategy := worktreeStrategy
-	originalPattern := worktreePattern
+	originalRoot := appCfg.Root
+	originalStrategy := appCfg.Strategy
+	originalPattern := appCfg.Pattern
 	t.Cleanup(func() {
-		worktreeRoot = originalRoot
-		worktreeStrategy = originalStrategy
-		worktreePattern = originalPattern
+		appCfg.Root = originalRoot
+		appCfg.Strategy = originalStrategy
+		appCfg.Pattern = originalPattern
 	})
 
 	tmpDir := t.TempDir()
-	worktreeRoot = filepath.Join(tmpDir, "missing-root")
-	worktreeStrategy = "global"
-	worktreePattern = ""
+	appCfg.Root = filepath.Join(tmpDir, "missing-root")
+	appCfg.Strategy = "global"
+	appCfg.Pattern = ""
 
 	repo := "example-repo"
 	branch := "feature/foo"
@@ -887,12 +887,12 @@ func TestBuildWorktreePathCreatesMissingRoot(t *testing.T) {
 		t.Fatalf("buildWorktreePath() unexpected error: %v", err)
 	}
 
-	expectedPath := filepath.Join(worktreeRoot, repo, "feature", "foo")
+	expectedPath := filepath.Join(appCfg.Root, repo, "feature", "foo")
 	if path != expectedPath {
 		t.Fatalf("buildWorktreePath() = %s, want %s", path, expectedPath)
 	}
 
-	repoDir := filepath.Join(worktreeRoot, repo)
+	repoDir := filepath.Join(appCfg.Root, repo)
 	statInfo, statErr := os.Stat(repoDir)
 	if statErr != nil {
 		t.Fatalf("expected repo directory to be created at %s: %v", repoDir, statErr)
@@ -903,13 +903,13 @@ func TestBuildWorktreePathCreatesMissingRoot(t *testing.T) {
 }
 
 func TestBuildWorktreePathFailsWhenRootIsFile(t *testing.T) {
-	originalRoot := worktreeRoot
-	originalStrategy := worktreeStrategy
-	originalPattern := worktreePattern
+	originalRoot := appCfg.Root
+	originalStrategy := appCfg.Strategy
+	originalPattern := appCfg.Pattern
 	t.Cleanup(func() {
-		worktreeRoot = originalRoot
-		worktreeStrategy = originalStrategy
-		worktreePattern = originalPattern
+		appCfg.Root = originalRoot
+		appCfg.Strategy = originalStrategy
+		appCfg.Pattern = originalPattern
 	})
 
 	tmpDir := t.TempDir()
@@ -919,9 +919,9 @@ func TestBuildWorktreePathFailsWhenRootIsFile(t *testing.T) {
 		t.Fatalf("failed to create file root: %v", err)
 	}
 
-	worktreeRoot = fileRoot
-	worktreeStrategy = "global"
-	worktreePattern = ""
+	appCfg.Root = fileRoot
+	appCfg.Strategy = "global"
+	appCfg.Pattern = ""
 
 	info := repoInfo{
 		Main: filepath.Join(tmpDir, "repo"),
@@ -934,19 +934,19 @@ func TestBuildWorktreePathFailsWhenRootIsFile(t *testing.T) {
 }
 
 func TestBuildWorktreePathStrategies(t *testing.T) {
-	originalRoot := worktreeRoot
-	originalStrategy := worktreeStrategy
-	originalPattern := worktreePattern
-	originalSeparator := worktreeSeparator
+	originalRoot := appCfg.Root
+	originalStrategy := appCfg.Strategy
+	originalPattern := appCfg.Pattern
+	originalSeparator := appCfg.Separator
 	t.Cleanup(func() {
-		worktreeRoot = originalRoot
-		worktreeStrategy = originalStrategy
-		worktreePattern = originalPattern
-		worktreeSeparator = originalSeparator
+		appCfg.Root = originalRoot
+		appCfg.Strategy = originalStrategy
+		appCfg.Pattern = originalPattern
+		appCfg.Separator = originalSeparator
 	})
 
 	tmpDir := t.TempDir()
-	worktreeRoot = filepath.Join(tmpDir, "worktrees")
+	appCfg.Root = filepath.Join(tmpDir, "worktrees")
 
 	repoRoot := filepath.Join(tmpDir, "repo")
 	info := repoInfo{
@@ -965,7 +965,7 @@ func TestBuildWorktreePathStrategies(t *testing.T) {
 			strategy:  "global",
 			separator: "/",
 			branch:    "feature-branch",
-			want:      filepath.Join(worktreeRoot, "repo", "feature-branch"),
+			want:      filepath.Join(appCfg.Root, "repo", "feature-branch"),
 		},
 		{
 			name:      "sibling-repo",
@@ -1006,9 +1006,9 @@ func TestBuildWorktreePathStrategies(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			worktreeStrategy = tt.strategy
-			worktreePattern = ""
-			worktreeSeparator = tt.separator
+			appCfg.Strategy = tt.strategy
+			appCfg.Pattern = ""
+			appCfg.Separator = tt.separator
 
 			path, err := buildWorktreePath(info, tt.branch)
 			if err != nil {
@@ -1022,19 +1022,19 @@ func TestBuildWorktreePathStrategies(t *testing.T) {
 }
 
 func TestBuildWorktreePathCustomPattern(t *testing.T) {
-	originalRoot := worktreeRoot
-	originalStrategy := worktreeStrategy
-	originalPattern := worktreePattern
+	originalRoot := appCfg.Root
+	originalStrategy := appCfg.Strategy
+	originalPattern := appCfg.Pattern
 	t.Cleanup(func() {
-		worktreeRoot = originalRoot
-		worktreeStrategy = originalStrategy
-		worktreePattern = originalPattern
+		appCfg.Root = originalRoot
+		appCfg.Strategy = originalStrategy
+		appCfg.Pattern = originalPattern
 	})
 
 	tmpDir := t.TempDir()
-	worktreeRoot = filepath.Join(tmpDir, "worktrees")
-	worktreeStrategy = "custom"
-	worktreePattern = "{.worktreeRoot}/custom/{.repo.Name}/{.branch}"
+	appCfg.Root = filepath.Join(tmpDir, "worktrees")
+	appCfg.Strategy = "custom"
+	appCfg.Pattern = "{.worktreeRoot}/custom/{.repo.Name}/{.branch}"
 
 	info := repoInfo{
 		Main: filepath.Join(tmpDir, "repo"),
@@ -1046,28 +1046,28 @@ func TestBuildWorktreePathCustomPattern(t *testing.T) {
 		t.Fatalf("buildWorktreePath() unexpected error: %v", err)
 	}
 
-	expectedPath := filepath.Join(worktreeRoot, "custom", "repo", "feat")
+	expectedPath := filepath.Join(appCfg.Root, "custom", "repo", "feat")
 	if path != expectedPath {
 		t.Fatalf("buildWorktreePath() = %s, want %s", path, expectedPath)
 	}
 }
 
 func TestBuildWorktreePathSeparator(t *testing.T) {
-	originalRoot := worktreeRoot
-	originalStrategy := worktreeStrategy
-	originalPattern := worktreePattern
-	originalSeparator := worktreeSeparator
+	originalRoot := appCfg.Root
+	originalStrategy := appCfg.Strategy
+	originalPattern := appCfg.Pattern
+	originalSeparator := appCfg.Separator
 	t.Cleanup(func() {
-		worktreeRoot = originalRoot
-		worktreeStrategy = originalStrategy
-		worktreePattern = originalPattern
-		worktreeSeparator = originalSeparator
+		appCfg.Root = originalRoot
+		appCfg.Strategy = originalStrategy
+		appCfg.Pattern = originalPattern
+		appCfg.Separator = originalSeparator
 	})
 
 	tmpDir := t.TempDir()
-	worktreeRoot = filepath.Join(tmpDir, "worktrees")
-	worktreeStrategy = "custom"
-	worktreePattern = "{.worktreeRoot}/{.repo.Name}/{.branch}"
+	appCfg.Root = filepath.Join(tmpDir, "worktrees")
+	appCfg.Strategy = "custom"
+	appCfg.Pattern = "{.worktreeRoot}/{.repo.Name}/{.branch}"
 
 	info := repoInfo{
 		Main: filepath.Join(tmpDir, "repo"),
@@ -1126,14 +1126,14 @@ func TestBuildWorktreePathSeparator(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			worktreeSeparator = tt.separator
+			appCfg.Separator = tt.separator
 
 			path, err := buildWorktreePath(info, tt.branch)
 			if err != nil {
 				t.Fatalf("buildWorktreePath() unexpected error: %v", err)
 			}
 
-			expectedPath := filepath.Join(worktreeRoot, "repo", tt.wantBranch)
+			expectedPath := filepath.Join(appCfg.Root, "repo", tt.wantBranch)
 			if path != expectedPath {
 				t.Fatalf("buildWorktreePath() = %s, want %s", path, expectedPath)
 			}
@@ -1142,21 +1142,21 @@ func TestBuildWorktreePathSeparator(t *testing.T) {
 }
 
 func TestBuildWorktreePathMissingPatternKey(t *testing.T) {
-	originalRoot := worktreeRoot
-	originalStrategy := worktreeStrategy
-	originalPattern := worktreePattern
+	originalRoot := appCfg.Root
+	originalStrategy := appCfg.Strategy
+	originalPattern := appCfg.Pattern
 	t.Cleanup(func() {
-		worktreeRoot = originalRoot
-		worktreeStrategy = originalStrategy
-		worktreePattern = originalPattern
+		appCfg.Root = originalRoot
+		appCfg.Strategy = originalStrategy
+		appCfg.Pattern = originalPattern
 	})
 
-	worktreeRoot = t.TempDir()
-	worktreeStrategy = "custom"
-	worktreePattern = "{.missing}/{.branch}"
+	appCfg.Root = t.TempDir()
+	appCfg.Strategy = "custom"
+	appCfg.Pattern = "{.missing}/{.branch}"
 
 	info := repoInfo{
-		Main: filepath.Join(worktreeRoot, "repo"),
+		Main: filepath.Join(appCfg.Root, "repo"),
 		Name: "repo",
 	}
 
@@ -1166,15 +1166,15 @@ func TestBuildWorktreePathMissingPatternKey(t *testing.T) {
 }
 
 func TestResolveWorktreePatternCustomRequiresPattern(t *testing.T) {
-	originalStrategy := worktreeStrategy
-	originalPattern := worktreePattern
+	originalStrategy := appCfg.Strategy
+	originalPattern := appCfg.Pattern
 	t.Cleanup(func() {
-		worktreeStrategy = originalStrategy
-		worktreePattern = originalPattern
+		appCfg.Strategy = originalStrategy
+		appCfg.Pattern = originalPattern
 	})
 
-	worktreeStrategy = "custom"
-	worktreePattern = ""
+	appCfg.Strategy = "custom"
+	appCfg.Pattern = ""
 
 	if _, err := resolveWorktreePattern(); err == nil {
 		t.Fatal("expected resolveWorktreePattern() to fail when custom pattern is missing")
@@ -1182,19 +1182,19 @@ func TestResolveWorktreePatternCustomRequiresPattern(t *testing.T) {
 }
 
 func TestBuildWorktreePathWithEnvVar(t *testing.T) {
-	originalRoot := worktreeRoot
-	originalStrategy := worktreeStrategy
-	originalPattern := worktreePattern
+	originalRoot := appCfg.Root
+	originalStrategy := appCfg.Strategy
+	originalPattern := appCfg.Pattern
 	t.Cleanup(func() {
-		worktreeRoot = originalRoot
-		worktreeStrategy = originalStrategy
-		worktreePattern = originalPattern
+		appCfg.Root = originalRoot
+		appCfg.Strategy = originalStrategy
+		appCfg.Pattern = originalPattern
 	})
 
 	tmpDir := t.TempDir()
-	worktreeRoot = filepath.Join(tmpDir, "worktrees")
-	worktreeStrategy = "custom"
-	worktreePattern = "{.worktreeRoot}/{.env.MY_CUSTOM_VAR}/{.branch}"
+	appCfg.Root = filepath.Join(tmpDir, "worktrees")
+	appCfg.Strategy = "custom"
+	appCfg.Pattern = "{.worktreeRoot}/{.env.MY_CUSTOM_VAR}/{.branch}"
 
 	t.Setenv("MY_CUSTOM_VAR", "custom-value")
 
@@ -1208,26 +1208,26 @@ func TestBuildWorktreePathWithEnvVar(t *testing.T) {
 		t.Fatalf("buildWorktreePath() unexpected error: %v", err)
 	}
 
-	expectedPath := filepath.Join(worktreeRoot, "custom-value", "feat", "test")
+	expectedPath := filepath.Join(appCfg.Root, "custom-value", "feat", "test")
 	if path != expectedPath {
 		t.Fatalf("buildWorktreePath() = %s, want %s", path, expectedPath)
 	}
 }
 
 func TestBuildWorktreePathMissingEnvVar(t *testing.T) {
-	originalRoot := worktreeRoot
-	originalStrategy := worktreeStrategy
-	originalPattern := worktreePattern
+	originalRoot := appCfg.Root
+	originalStrategy := appCfg.Strategy
+	originalPattern := appCfg.Pattern
 	t.Cleanup(func() {
-		worktreeRoot = originalRoot
-		worktreeStrategy = originalStrategy
-		worktreePattern = originalPattern
+		appCfg.Root = originalRoot
+		appCfg.Strategy = originalStrategy
+		appCfg.Pattern = originalPattern
 	})
 
 	tmpDir := t.TempDir()
-	worktreeRoot = filepath.Join(tmpDir, "worktrees")
-	worktreeStrategy = "custom"
-	worktreePattern = "{.worktreeRoot}/{.env.TOTALLY_MISSING_VAR_12345}/{.branch}"
+	appCfg.Root = filepath.Join(tmpDir, "worktrees")
+	appCfg.Strategy = "custom"
+	appCfg.Pattern = "{.worktreeRoot}/{.env.TOTALLY_MISSING_VAR_12345}/{.branch}"
 
 	// Ensure the var is not set
 	t.Setenv("TOTALLY_MISSING_VAR_12345", "")
@@ -1247,10 +1247,10 @@ func TestBuildWorktreePathMissingEnvVar(t *testing.T) {
 // --- Hook tests ---
 
 func TestGetHooks(t *testing.T) {
-	original := worktreeHooks
-	t.Cleanup(func() { worktreeHooks = original })
+	original := appCfg.Hooks
+	t.Cleanup(func() { appCfg.Hooks = original })
 
-	worktreeHooks = Hooks{
+	appCfg.Hooks = Hooks{
 		PreCreate:    []string{"echo pre-create"},
 		PostCreate:   []string{"echo post-create"},
 		PreCheckout:  []string{"echo pre-checkout"},

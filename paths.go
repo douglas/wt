@@ -39,7 +39,7 @@ func renderWorktreePath(info repoInfo, branch string) (string, error) {
 		return "", err
 	}
 
-	sep := worktreeSeparator
+	sep := appCfg.Separator
 
 	// transformValue replaces "/" and "\" with the configured separator.
 	transformValue := func(s string) string {
@@ -62,7 +62,7 @@ func renderWorktreePath(info repoInfo, branch string) (string, error) {
 			Name:  info.Name,
 		},
 		"branch":       strings.TrimSpace(transformValue(branch)),
-		"worktreeRoot": worktreeRoot, // full path — NOT transformed
+		"worktreeRoot": appCfg.Root, // full path — NOT transformed
 		"env":          envMap,
 	}
 
@@ -86,7 +86,7 @@ func renderWorktreePath(info repoInfo, branch string) (string, error) {
 	rendered := renderedBuf.String()
 	rendered = filepath.FromSlash(rendered)
 	if !filepath.IsAbs(rendered) {
-		rendered = filepath.Join(worktreeRoot, rendered)
+		rendered = filepath.Join(appCfg.Root, rendered)
 	}
 
 	rendered = filepath.Clean(rendered)
@@ -102,7 +102,7 @@ func cleanupWorktreePath(worktreePath string) error {
 		return fmt.Errorf("failed to remove worktree directory %s: %w", worktreePath, err)
 	}
 
-	absRoot, err := filepath.Abs(worktreeRoot)
+	absRoot, err := filepath.Abs(appCfg.Root)
 	if err != nil {
 		return nil
 	}
@@ -123,14 +123,14 @@ func cleanupWorktreePath(worktreePath string) error {
 }
 
 func resolveWorktreePattern() (string, error) {
-	if worktreePattern != "" {
-		return worktreePattern, nil
+	if appCfg.Pattern != "" {
+		return appCfg.Pattern, nil
 	}
-	if worktreeStrategy == "custom" {
+	if appCfg.Strategy == "custom" {
 		return "", fmt.Errorf("WORKTREE_PATTERN is required when WORKTREE_STRATEGY is 'custom'")
 	}
 
-	switch worktreeStrategy {
+	switch appCfg.Strategy {
 	case "global":
 		return "{.worktreeRoot}/{.repo.Name}/{.branch}", nil
 	case "sibling-repo", "sibling":
@@ -144,7 +144,7 @@ func resolveWorktreePattern() (string, error) {
 	case "inside-dotdir", "nested-local":
 		return "{.repo.Main}/.worktrees/{.branch}", nil
 	default:
-		return "", fmt.Errorf("unsupported WORKTREE_STRATEGY: %s", worktreeStrategy)
+		return "", fmt.Errorf("unsupported WORKTREE_STRATEGY: %s", appCfg.Strategy)
 	}
 }
 
