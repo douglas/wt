@@ -33,7 +33,7 @@ func init() {
 
 func main() {
 	// Re-load config after cobra parses flags so --config is available
-	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+	rootCmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
 		if err := validateOutputFormat(); err != nil {
 			return err
 		}
@@ -59,7 +59,7 @@ var rootCmd = &cobra.Command{
 	Long:          "",
 	SilenceErrors: true,
 	SilenceUsage:  true,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		return printCommandHelp(cmd)
 	},
 }
@@ -681,8 +681,9 @@ func getMergedBranches(base string) ([]string, error) {
 		return nil, fmt.Errorf("failed to get merged branches: %w", err)
 	}
 
-	var branches []string
-	for _, line := range strings.Split(string(output), "\n") {
+	lines := strings.Split(string(output), "\n")
+	branches := make([]string, 0, len(lines))
+	for _, line := range lines {
 		branch := strings.TrimSpace(line)
 		// Skip empty lines and base branches
 		if branch == "" || branch == base || branch == "main" || branch == "master" {
@@ -1278,7 +1279,7 @@ var listCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
 	Short:   "List all worktrees",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		if isJSONOutput() {
 			entries, err := getWorktreeListPorcelain()
 			if err != nil {
@@ -1428,7 +1429,7 @@ Examples:
   wt cleanup              # Interactive confirmation for each worktree
   wt cleanup --dry-run    # Preview what would be removed
   wt cleanup --force      # Remove all without confirmation`,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		base := getDefaultBase()
 		jsonMode := isJSONOutput()
 
@@ -1558,7 +1559,7 @@ Examples:
 var pruneCmd = &cobra.Command{
 	Use:   "prune",
 	Short: "Remove worktree administrative files",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		gitCmd := exec.Command("git", "worktree", "prune")
 		if !isJSONOutput() {
 			gitCmd.Stdout = os.Stdout
@@ -1580,7 +1581,7 @@ var pruneCmd = &cobra.Command{
 var infoCmd = &cobra.Command{
 	Use:   "info",
 	Short: "Show worktree location configuration",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		jsonMode := isJSONOutput()
 		pattern, err := resolveWorktreePattern()
 		if err != nil {
@@ -1702,7 +1703,7 @@ var configInitForce bool
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage wt configuration",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		return printCommandHelp(cmd)
 	},
 }
@@ -1710,7 +1711,7 @@ var configCmd = &cobra.Command{
 var configInitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Create a default configuration file",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		path := resolveConfigPath(configFlag)
 		if err := writeDefaultConfig(path, configInitForce); err != nil {
 			return err
@@ -1726,7 +1727,7 @@ var configInitCmd = &cobra.Command{
 var configShowCmd = &cobra.Command{
 	Use:   "show",
 	Short: "Show effective configuration with sources",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		pattern := configShowPatternValue()
 
 		configStatus := "not found"
@@ -1771,7 +1772,7 @@ func configShowPatternValue() string {
 var configPathCmd = &cobra.Command{
 	Use:   "path",
 	Short: "Print the config file path",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		if isJSONOutput() {
 			return emitJSONSuccess(cmd, map[string]string{"path": resolveConfigPath(configFlag)})
 		}
@@ -1802,7 +1803,7 @@ Note: For zsh, place this AFTER compinit to enable tab completion.
 This enables:
 - Automatic cd to worktree after checkout/create/pr/mr commands
 - Tab completion for commands and branch names`,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		if isJSONOutput() {
 			_ = emitJSONSuccess(cmd, map[string]string{
 				"note": "shellenv outputs shell script text; run without --format json to source it",
@@ -2036,7 +2037,7 @@ fi
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Show version information",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		if isJSONOutput() {
 			return emitJSONSuccess(cmd, map[string]string{"version": version})
 		}

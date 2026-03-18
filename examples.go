@@ -503,7 +503,7 @@ Examples:
   wt examples
   wt --format json examples`,
 	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		topics := orderedTopics()
 		if isJSONOutput() {
 			return emitJSONSuccess(cmd, map[string]any{

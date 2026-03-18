@@ -257,7 +257,7 @@ func loadScenarios(dir string) ([]ScenarioFile, error) {
 		return nil, err
 	}
 
-	var scenarios []ScenarioFile
+	scenarios := make([]ScenarioFile, 0, len(files))
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
@@ -343,7 +343,7 @@ func generateScript(wtBinary, shell string, scenario Scenario, verbose, showOutp
 	return generatePosixScript(wtBinary, shell, scenario, verbose, showOutput, keepTmp)
 }
 
-func generatePosixScript(wtBinary, shell string, scenario Scenario, verbose, showOutput, keepTmp bool) string {
+func generatePosixScript(wtBinary, _ string, scenario Scenario, verbose, showOutput, keepTmp bool) string {
 	var sb strings.Builder
 
 	// Header
@@ -573,7 +573,8 @@ func generatePowerShellScript(wtBinary string, scenario Scenario, verbose, showO
 				sb.WriteString("$__output = ''\n")
 			}
 
-			if expectsNonZero {
+			switch {
+			case expectsNonZero:
 				// Handle expected non-zero exit codes
 				sb.WriteString("$__exit_code = 0\n")
 				sb.WriteString("try {\n")
@@ -589,11 +590,11 @@ func generatePowerShellScript(wtBinary string, scenario Scenario, verbose, showO
 				}
 				sb.WriteString("  $__exit_code = 1\n")
 				sb.WriteString("}\n")
-			} else if needsOutput {
+			case needsOutput:
 				// Capture output (runs in pipeline context)
 				sb.WriteString(fmt.Sprintf("$__output = %s 2>&1 | Out-String\n", runCmd))
 				sb.WriteString("$__exit_code = $LASTEXITCODE\n")
-			} else {
+			default:
 				// Run directly to allow auto-cd to work
 				sb.WriteString(fmt.Sprintf("%s\n", runCmd))
 				sb.WriteString("$__exit_code = $LASTEXITCODE\n")

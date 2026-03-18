@@ -53,7 +53,7 @@ If the primary checkout lives under WORKTREE_ROOT, it is moved back under ~/src.
 Examples:
   wt migrate
   wt migrate --force`,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		entries, err := listParsedWorktrees()
 		if err != nil {
 			return err
@@ -129,7 +129,7 @@ func buildMigratePlan(entries []parsedWorktree, force bool) ([]migrateItem, erro
 		return nil, err
 	}
 
-	var plan []migrateItem
+	plan := make([]migrateItem, 0, len(entries))
 
 	absWorktreeRoot, err := filepath.Abs(worktreeRoot)
 	if err != nil {
@@ -310,8 +310,8 @@ func applyMigratePlan(cmd *cobra.Command, plan []migrateItem) error {
 	skipCount := 0
 	failCount := 0
 	results := make([]map[string]any, 0, len(plan))
-	var primaryItems []migrateItem
-	var secondaryItems []migrateItem
+	primaryItems := make([]migrateItem, 0, len(plan))
+	secondaryItems := make([]migrateItem, 0, len(plan))
 
 	record := func(item migrateItem, status, reason string) {
 		result := map[string]any{
