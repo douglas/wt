@@ -27,9 +27,10 @@ go vet ./...
 go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
 ```
 
-The project uses golangci-lint with errcheck, gocritic, gofmt, gosimple,
-govet, ineffassign, misspell, revive, staticcheck, and others. See
-`.golangci.yml` for the full configuration.
+The project uses golangci-lint with 29 linters including errcheck, errorlint,
+gocritic, godot, gofmt, gosimple, gosec, govet, ineffassign, misspell,
+nestif, nilerr, revive, staticcheck, tparallel, unparam, and others. See
+`.golangci.yml` for the full configuration. Coverage target: 83%.
 
 ## Architecture
 
