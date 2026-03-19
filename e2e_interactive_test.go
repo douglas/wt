@@ -17,7 +17,7 @@ import (
 	"github.com/creack/pty"
 )
 
-// ptyShell represents a pseudo-terminal running a shell
+// ptyShell represents a pseudo-terminal running a shell.
 type ptyShell struct {
 	pty       *os.File
 	cmd       *exec.Cmd
@@ -33,7 +33,7 @@ var (
 	builtWtBinaryErr  error
 )
 
-// getInitWaitTime returns appropriate wait time for shell initialization
+// getInitWaitTime returns appropriate wait time for shell initialization.
 func getInitWaitTime() time.Duration {
 	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
 		return 5 * time.Second
@@ -41,7 +41,7 @@ func getInitWaitTime() time.Duration {
 	return 2 * time.Second
 }
 
-// getContextTimeout returns appropriate timeout for waiting on shell output
+// getContextTimeout returns appropriate timeout for waiting on shell output.
 func getContextTimeout() time.Duration {
 	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
 		return 10 * time.Second
@@ -49,7 +49,7 @@ func getContextTimeout() time.Duration {
 	return 5 * time.Second
 }
 
-// newPtyZsh spawns zsh in a pty with the given rc content
+// newPtyZsh spawns zsh in a pty with the given rc content.
 func newPtyZsh(t *testing.T, rcContent string) (*ptyShell, error) {
 	t.Helper()
 
@@ -82,7 +82,7 @@ func newPtyZsh(t *testing.T, rcContent string) (*ptyShell, error) {
 	return ps, nil
 }
 
-// newPtyBash spawns bash in a pty with the given rc content
+// newPtyBash spawns bash in a pty with the given rc content.
 func newPtyBash(t *testing.T, rcContent string) (*ptyShell, error) {
 	t.Helper()
 
@@ -114,7 +114,7 @@ func newPtyBash(t *testing.T, rcContent string) (*ptyShell, error) {
 	return ps, nil
 }
 
-// newPtyPowerShell spawns PowerShell in a pty with the given profile content
+// newPtyPowerShell spawns PowerShell in a pty with the given profile content.
 func newPtyPowerShell(t *testing.T, profileContent string) (*ptyShell, error) {
 	t.Helper()
 
@@ -153,7 +153,7 @@ func newPtyPowerShell(t *testing.T, profileContent string) (*ptyShell, error) {
 	return ps, nil
 }
 
-// readLoop continuously reads from the pty and appends to the output buffer
+// readLoop continuously reads from the pty and appends to the output buffer.
 func (ps *ptyShell) readLoop() {
 	defer close(ps.done)
 	buf := make([]byte, 4096)
@@ -173,7 +173,7 @@ func (ps *ptyShell) readLoop() {
 	}
 }
 
-// waitForText waits for specific text to appear in the output
+// waitForText waits for specific text to appear in the output.
 func (ps *ptyShell) waitForText(ctx context.Context, text string) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -198,13 +198,13 @@ func (ps *ptyShell) waitForText(ctx context.Context, text string) error {
 	}
 }
 
-// send writes a string to the pty (simulating user input)
+// send writes a string to the pty (simulating user input).
 func (ps *ptyShell) send(s string) error {
 	_, err := ps.pty.Write([]byte(s))
 	return err
 }
 
-// close terminates the shell and cleans up resources
+// close terminates the shell and cleans up resources.
 func (ps *ptyShell) close() {
 	ps.send("exit\r\n")
 
@@ -226,21 +226,21 @@ func (ps *ptyShell) close() {
 	<-ps.done
 }
 
-// getOutput returns the current accumulated output
+// getOutput returns the current accumulated output.
 func (ps *ptyShell) getOutput() string {
 	ps.outputMux.Lock()
 	defer ps.outputMux.Unlock()
 	return ps.output.String()
 }
 
-// resetOutput clears the output buffer (thread-safe)
+// resetOutput clears the output buffer (thread-safe).
 func (ps *ptyShell) resetOutput() {
 	ps.outputMux.Lock()
 	defer ps.outputMux.Unlock()
 	ps.output.Reset()
 }
 
-// TestInteractiveCheckoutWithoutArgs verifies interactive checkout prompt works
+// TestInteractiveCheckoutWithoutArgs verifies interactive checkout prompt works.
 // when running 'wt co' without a branch argument, using stdin pipe.
 func TestInteractiveCheckoutWithoutArgs(t *testing.T) {
 	if testing.Short() {
@@ -283,7 +283,7 @@ func TestInteractiveCheckoutWithoutArgs(t *testing.T) {
 	}
 }
 
-// TestNonInteractiveCheckoutWithArgs demonstrates that checkout works when
+// TestNonInteractiveCheckoutWithArgs demonstrates that checkout works when.
 // providing an explicit branch name via shell wrapper with auto-cd.
 func TestNonInteractiveCheckoutWithArgs(t *testing.T) {
 	if testing.Short() {
@@ -355,7 +355,7 @@ echo "Built wt binary: %s"
 	t.Log("SUCCESS: Non-interactive checkout with explicit branch name works correctly")
 }
 
-// TestZshTabCompletionWithShellenvLast verifies positive zsh tab completion behavior
+// TestZshTabCompletionWithShellenvLast verifies positive zsh tab completion behavior.
 // when shellenv is sourced after other completion initialization.
 func TestZshTabCompletionWithShellenvLast(t *testing.T) {
 	if testing.Short() {
@@ -428,7 +428,7 @@ echo "=== WT SHELLENV LOADED ==="
 	}
 }
 
-// TestInteractiveCheckoutWithoutArgsBash verifies interactive checkout prompt works
+// TestInteractiveCheckoutWithoutArgsBash verifies interactive checkout prompt works.
 // in bash when running 'wt co' without a branch argument, using stdin pipe.
 func TestInteractiveCheckoutWithoutArgsBash(t *testing.T) {
 	if testing.Short() {
@@ -475,7 +475,7 @@ func TestInteractiveCheckoutWithoutArgsBash(t *testing.T) {
 	}
 }
 
-// TestNonInteractiveCheckoutWithArgsBash demonstrates that checkout works when
+// TestNonInteractiveCheckoutWithArgsBash demonstrates that checkout works when.
 // providing an explicit branch name in bash.
 func TestNonInteractiveCheckoutWithArgsBash(t *testing.T) {
 	if testing.Short() {
@@ -547,7 +547,7 @@ echo "Built wt binary: %s"
 	t.Log("SUCCESS: Non-interactive checkout with explicit branch name works correctly")
 }
 
-// TestBashTabCompletionForCheckoutBranch verifies positive bash tab completion
+// TestBashTabCompletionForCheckoutBranch verifies positive bash tab completion.
 // for checkout branch names from existing worktrees.
 func TestBashTabCompletionForCheckoutBranch(t *testing.T) {
 	if testing.Short() {
@@ -606,7 +606,7 @@ echo "=== WT SHELLENV LOADED ==="
 	}
 }
 
-// TestZshTabCompletionForCommands verifies zsh command completion expands
+// TestZshTabCompletionForCommands verifies zsh command completion expands.
 // subcommands (e.g., "ve" -> "version") and executes the completed command.
 func TestZshTabCompletionForCommands(t *testing.T) {
 	if testing.Short() {
@@ -662,7 +662,7 @@ echo "=== WT SHELLENV LOADED ==="
 	}
 }
 
-// TestBashTabCompletionForCommands verifies bash command completion expands
+// TestBashTabCompletionForCommands verifies bash command completion expands.
 // subcommands (e.g., "ve" -> "version") and executes the completed command.
 func TestBashTabCompletionForCommands(t *testing.T) {
 	if testing.Short() {
@@ -716,7 +716,7 @@ echo "=== WT SHELLENV LOADED ==="
 	}
 }
 
-// TestZshTabCompletionForConfigSubcommands verifies zsh completes config subcommands
+// TestZshTabCompletionForConfigSubcommands verifies zsh completes config subcommands.
 // (e.g., "wt config pa<Tab>" -> "wt config path").
 func TestZshTabCompletionForConfigSubcommands(t *testing.T) {
 	if testing.Short() {
@@ -769,7 +769,7 @@ echo "=== WT SHELLENV LOADED ==="
 	}
 }
 
-// TestBashTabCompletionForConfigSubcommands verifies bash completes config subcommands
+// TestBashTabCompletionForConfigSubcommands verifies bash completes config subcommands.
 // (e.g., "wt config pa<Tab>" -> "wt config path").
 func TestBashTabCompletionForConfigSubcommands(t *testing.T) {
 	if testing.Short() {
@@ -820,7 +820,7 @@ echo "=== WT SHELLENV LOADED ==="
 	}
 }
 
-// TestInteractiveCheckoutWithoutArgsPowerShell verifies interactive checkout prompt
+// TestInteractiveCheckoutWithoutArgsPowerShell verifies interactive checkout prompt.
 // in PowerShell when running 'wt co' without a branch argument.
 func TestInteractiveCheckoutWithoutArgsPowerShell(t *testing.T) {
 	if testing.Short() {
@@ -900,7 +900,7 @@ Write-Output "Built wt binary: %s"
 	time.Sleep(500 * time.Millisecond)
 }
 
-// TestNonInteractiveCheckoutWithArgsPowerShell demonstrates that checkout works when
+// TestNonInteractiveCheckoutWithArgsPowerShell demonstrates that checkout works when.
 // providing an explicit branch name in PowerShell.
 func TestNonInteractiveCheckoutWithArgsPowerShell(t *testing.T) {
 	if testing.Short() {
@@ -981,7 +981,7 @@ Write-Output "=== WT SHELLENV LOADED ==="
 	t.Log("SUCCESS: Non-interactive checkout with explicit branch name works correctly")
 }
 
-// TestPowerShellCompletionForCheckoutBranch verifies positive PowerShell completion
+// TestPowerShellCompletionForCheckoutBranch verifies positive PowerShell completion.
 // by querying the completion API after shellenv registration.
 func TestPowerShellCompletionForCheckoutBranch(t *testing.T) {
 	if testing.Short() {
@@ -1048,7 +1048,7 @@ Write-Output "=== WT SHELLENV LOADED ==="
 	}
 }
 
-// TestPowerShellCompletionForCommands verifies command completion includes
+// TestPowerShellCompletionForCommands verifies command completion includes.
 // the expected 'version' subcommand.
 func TestPowerShellCompletionForCommands(t *testing.T) {
 	if testing.Short() {
@@ -1111,7 +1111,7 @@ Write-Output "=== WT SHELLENV LOADED ==="
 	}
 }
 
-// TestPowerShellCompletionForConfigSubcommands verifies completion includes
+// TestPowerShellCompletionForConfigSubcommands verifies completion includes.
 // expected config subcommands for the second argument.
 func TestPowerShellCompletionForConfigSubcommands(t *testing.T) {
 	if testing.Short() {
@@ -1174,7 +1174,7 @@ Write-Output "=== WT SHELLENV LOADED ==="
 	}
 }
 
-// Helper functions for test setup
+// Helper functions for test setup.
 
 func setupTestRepo(t *testing.T, repoDir string) {
 	t.Helper()
@@ -1209,7 +1209,7 @@ func buildWtBinary(t *testing.T, tmpDir string) string {
 		builtWtBinaryPath = filepath.Join(buildDir, binaryName)
 		cmd := exec.Command("go", "build", "-o", builtWtBinaryPath, ".")
 		if output, err := cmd.CombinedOutput(); err != nil {
-			builtWtBinaryErr = fmt.Errorf("failed to build wt binary: %v\nOutput: %s", err, output)
+			builtWtBinaryErr = fmt.Errorf("failed to build wt binary: %w\nOutput: %s", err, output)
 			return
 		}
 	})

@@ -104,12 +104,12 @@ func cleanupWorktreePath(worktreePath string) error {
 
 	absRoot, err := filepath.Abs(appCfg.Root)
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // best-effort cleanup, errors are not actionable
 	}
 
 	absWorktreePath, err := filepath.Abs(worktreePath)
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // best-effort cleanup, errors are not actionable
 	}
 
 	repoDir := filepath.Dir(absWorktreePath)

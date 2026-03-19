@@ -9,8 +9,7 @@ import (
 // TestShellenvInteractiveModeOutputCapture tests that the shell function
 // captures output for interactive commands (co/checkout/rm/remove/pr/mr with no args).
 // This is critical for auto-cd functionality.
-//
-// BUG: Currently fails because interactive mode doesn't capture output
+// BUG: Currently fails because interactive mode doesn't capture output.
 func TestShellenvInteractiveModeOutputCapture(t *testing.T) {
 	// Get the shellenv output
 	cmd := exec.Command("go", "run", ".", "shellenv")
@@ -59,7 +58,7 @@ func TestShellenvInteractiveModeOutputCapture(t *testing.T) {
 // TestShellenvZshCompdefProtection tests that compdef is only called
 // when it's available, preventing "command not found: compdef" errors.
 //
-// BUG: Currently fails because compdef is called unconditionally
+// BUG: Currently fails because compdef is called unconditionally.
 func TestShellenvZshCompdefProtection(t *testing.T) {
 	cmd := exec.Command("go", "run", ".", "shellenv")
 	output, err := cmd.Output()
@@ -90,7 +89,7 @@ func TestShellenvZshCompdefProtection(t *testing.T) {
 }
 
 // TestShellenvZshCompdefError tests that the shellenv can be sourced
-// in zsh without errors when compdef is not available (integration test)
+// in zsh without errors when compdef is not available (integration test).
 func TestShellenvZshCompdefError(t *testing.T) {
 	// Run shellenv and try to source it in a fresh zsh shell (without compinit)
 	// This simulates the real-world error condition

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -79,7 +80,7 @@ func getRepoInfo() (repoInfo, error) {
 			repoName = parsed.Name
 		}
 	}
-	if repoName == "" {
+	if repoName == "" { //nolint:nestif // multi-source repo name resolution is inherently branchy
 		repoName = strings.TrimSuffix(filepath.Base(repoRoot), ".git")
 		if commonCmd := gitCmd.Command("rev-parse", "--git-common-dir"); commonCmd != nil {
 			if commonOutput, commonErr := commonCmd.Output(); commonErr == nil {
@@ -316,7 +317,7 @@ func isDirEmpty(path string) (bool, error) {
 	defer dir.Close()
 
 	_, err = dir.Readdirnames(1)
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		return true, nil
 	}
 	return false, err

@@ -7,12 +7,26 @@ import (
 
 func TestOpenTTY_UseStdin(t *testing.T) {
 	t.Setenv("WT_USE_STDIN", "1")
-	f, err := openTTY()
-	if err != nil {
-		t.Fatalf("openTTY() returned error: %v", err)
-	}
+	f := openTTY()
 	if f.Fd() != os.Stdin.Fd() {
 		t.Errorf("expected fd %d (os.Stdin), got fd %d", os.Stdin.Fd(), f.Fd())
+	}
+}
+
+func TestOpenTTY_DevTTY(t *testing.T) {
+	t.Setenv("WT_USE_STDIN", "")
+
+	// /dev/tty is unavailable in CI and headless environments.
+	f, err := os.Open("/dev/tty")
+	if err != nil {
+		t.Skip("/dev/tty unavailable, skipping")
+	}
+	f.Close()
+
+	got := openTTY()
+	defer got.Close()
+	if got.Fd() == os.Stdin.Fd() {
+		t.Error("expected openTTY to return /dev/tty, got os.Stdin")
 	}
 }
 

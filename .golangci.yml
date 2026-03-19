@@ -4,28 +4,43 @@ run:
 
 linters:
   enable:
+    - copyloopvar
     - errcheck
+    - errorlint
     - exhaustive
+    - godot
     - gocritic
     - gofmt
+    - goimports
     - gosec
     - gosimple
     - govet
     - ineffassign
     - misspell
+    - nakedret
+    - nestif
+    - nilerr
+    - nilnil
     - nolintlint
+    - predeclared
     - prealloc
     - revive
     - staticcheck
+    - tparallel
     - typecheck
     - unconvert
+    - unparam
     - unused
+    - usestdlibvars
+    - wastedassign
     - whitespace
 
 linters-settings:
   errcheck:
     check-blank: false
     check-type-assertions: false
+  nestif:
+    min-complexity: 10
   nolintlint:
     require-explanation: true
     require-specific: true
@@ -40,3 +55,7 @@ issues:
         - gosec
     - path: cleanup_test\.go
       text: "G204"
+    - path: e2e/
+      linters:
+        - nestif
+        - godot

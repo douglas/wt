@@ -11,24 +11,21 @@ import (
 // openTTY opens /dev/tty for reading user input directly, bypassing
 // stdin which may be captured by shell command substitution.
 // Falls back to os.Stdin on Windows or if /dev/tty is unavailable.
-func openTTY() (*os.File, error) {
+func openTTY() *os.File {
 	if os.Getenv("WT_USE_STDIN") == "1" {
-		return os.Stdin, nil
+		return os.Stdin
 	}
 	f, err := os.Open("/dev/tty")
 	if err != nil {
-		return os.Stdin, nil
+		return os.Stdin
 	}
-	return f, nil
+	return f
 }
 
 // selectItem displays a numbered list of items and reads the user's
 // choice from /dev/tty. Returns the selected index and value.
 func selectItem(label string, items []string) (int, string, error) {
-	tty, err := openTTY()
-	if err != nil {
-		return -1, "", err
-	}
+	tty := openTTY()
 	if tty != os.Stdin {
 		defer tty.Close()
 	}
@@ -59,10 +56,7 @@ func selectItem(label string, items []string) (int, string, error) {
 // confirmPrompt asks the user a yes/no question via /dev/tty.
 // Returns true if the user answers "y" or "Y".
 func confirmPrompt(label string) (bool, error) {
-	tty, err := openTTY()
-	if err != nil {
-		return false, err
-	}
+	tty := openTTY()
 	if tty != os.Stdin {
 		defer tty.Close()
 	}

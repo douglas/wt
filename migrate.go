@@ -408,7 +408,7 @@ func movePrimaryCheckout(from, to string, force bool) error {
 	if output, err := repairCmd.CombinedOutput(); err != nil {
 		trimmed := strings.TrimSpace(string(output))
 		if trimmed != "" {
-			return fmt.Errorf("failed to repair worktrees after moving primary checkout: %v (%s)", err, trimmed)
+			return fmt.Errorf("failed to repair worktrees after moving primary checkout: %w (%s)", err, trimmed)
 		}
 		return fmt.Errorf("failed to repair worktrees after moving primary checkout: %w", err)
 	}

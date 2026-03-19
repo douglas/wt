@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Supported shells for init command
+// Supported shells for init command.
 var supportedShells = map[string]bool{
 	"bash":       true,
 	"zsh":        true,
@@ -18,7 +18,7 @@ var supportedShells = map[string]bool{
 	"pwsh":       true, // alias for powershell
 }
 
-// Init command flags
+// Init command flags.
 var (
 	initDryRun    bool
 	initUninstall bool
@@ -110,7 +110,7 @@ const (
 	markerEnd   = "# <<< wt initialize <<<"
 )
 
-// detectShell determines which shell to configure based on args or environment
+// detectShell determines which shell to configure based on args or environment.
 func detectShell(args []string) string {
 	// 1. Explicit argument
 	if len(args) > 0 {
@@ -142,7 +142,7 @@ func detectShell(args []string) string {
 	return "bash"
 }
 
-// getShellConfigPath returns the path to the shell configuration file
+// getShellConfigPath returns the path to the shell configuration file.
 func getShellConfigPath(shell string) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -190,7 +190,7 @@ func getShellConfigPath(shell string) string {
 	return ""
 }
 
-// getShellConfigContent returns the shell configuration block to add
+// getShellConfigContent returns the shell configuration block to add.
 func getShellConfigContent(shell string) string {
 	switch shell {
 	case "bash", "zsh":
@@ -205,7 +205,7 @@ Invoke-Expression (& wt shellenv)
 	return ""
 }
 
-// successPrefix returns a checkmark or "[ok]" depending on terminal support
+// successPrefix returns a checkmark or "[ok]" depending on terminal support.
 func successPrefix() string {
 	// Check if we're in a terminal that likely supports Unicode
 	// Most modern terminals do, but CI environments and some Windows consoles may not
@@ -215,7 +215,7 @@ func successPrefix() string {
 	return "✓"
 }
 
-// installShellConfig adds or updates shell configuration
+// installShellConfig adds or updates shell configuration.
 func installShellConfig(configPath, shell string, dryRun, noPrompt bool) error {
 	jsonMode := isJSONOutput()
 	content := getShellConfigContent(shell)
@@ -226,13 +226,13 @@ func installShellConfig(configPath, shell string, dryRun, noPrompt bool) error {
 	// Read existing config
 	existing, err := os.ReadFile(configPath)
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to read %s: %v", configPath, err)
+		return fmt.Errorf("failed to read %s: %w", configPath, err)
 	}
 
 	existingStr := string(existing)
 
-	// Check if already configured
-	if strings.Contains(existingStr, markerStart) {
+	// Check if already configured.
+	if strings.Contains(existingStr, markerStart) { //nolint:nestif // update-or-append logic is inherently branchy
 		// Update existing configuration
 		startIdx := strings.Index(existingStr, markerStart)
 		endIdx := strings.Index(existingStr, markerEnd)
@@ -250,7 +250,7 @@ func installShellConfig(configPath, shell string, dryRun, noPrompt bool) error {
 			}
 
 			if err := os.WriteFile(configPath, []byte(newContent), 0644); err != nil { //nolint:gosec // shell config should be world-readable
-				return fmt.Errorf("failed to write %s: %v", configPath, err)
+				return fmt.Errorf("failed to write %s: %w", configPath, err)
 			}
 			if !jsonMode {
 				fmt.Printf("%s Updated wt configuration in %s\n", successPrefix(), configPath)
@@ -272,13 +272,13 @@ func installShellConfig(configPath, shell string, dryRun, noPrompt bool) error {
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %v", err)
+		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
 	// Append to file
 	f, err := os.OpenFile(configPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to open %s: %v", configPath, err)
+		return fmt.Errorf("failed to open %s: %w", configPath, err)
 	}
 	defer f.Close()
 
@@ -290,7 +290,7 @@ func installShellConfig(configPath, shell string, dryRun, noPrompt bool) error {
 	}
 
 	if _, err := f.WriteString("\n" + content + "\n"); err != nil {
-		return fmt.Errorf("failed to write config: %v", err)
+		return fmt.Errorf("failed to write config: %w", err)
 	}
 
 	if !jsonMode {
@@ -313,7 +313,7 @@ func installShellConfig(configPath, shell string, dryRun, noPrompt bool) error {
 	return nil
 }
 
-// removeShellConfig removes the wt configuration block from shell config
+// removeShellConfig removes the wt configuration block from shell config.
 func removeShellConfig(configPath, shell string, dryRun bool) error {
 	_ = shell
 	jsonMode := isJSONOutput()
@@ -325,7 +325,7 @@ func removeShellConfig(configPath, shell string, dryRun bool) error {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("failed to read %s: %v", configPath, err)
+		return fmt.Errorf("failed to read %s: %w", configPath, err)
 	}
 
 	existingStr := string(existing)
@@ -366,7 +366,7 @@ func removeShellConfig(configPath, shell string, dryRun bool) error {
 	}
 
 	if err := os.WriteFile(configPath, []byte(newContent), 0644); err != nil { //nolint:gosec // shell config should be world-readable
-		return fmt.Errorf("failed to write %s: %v", configPath, err)
+		return fmt.Errorf("failed to write %s: %w", configPath, err)
 	}
 
 	if !jsonMode {

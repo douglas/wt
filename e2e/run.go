@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -323,7 +324,8 @@ func runScenario(wtBinary, shell, fileName string, scenario Scenario, verbose, s
 
 	if err != nil {
 		// Check if it's an expected failure
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			result.Error = fmt.Sprintf("exit code %d", exitErr.ExitCode())
 		} else {
 			result.Error = err.Error()
