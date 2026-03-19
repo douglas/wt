@@ -76,6 +76,8 @@ func TestResolveConfigPath(t *testing.T) {
 }
 
 func TestExpandHome(t *testing.T) {
+	t.Parallel()
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skip("cannot determine home directory")
@@ -120,6 +122,7 @@ func TestExpandHome(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := expandHome(tt.path)
 			if got != tt.want {
 				t.Errorf("expandHome(%q) = %q, want %q", tt.path, got, tt.want)
@@ -129,7 +132,10 @@ func TestExpandHome(t *testing.T) {
 }
 
 func TestWriteDefaultConfig(t *testing.T) {
+	t.Parallel()
+
 	t.Run("creates config file", func(t *testing.T) {
+		t.Parallel()
 		tmpDir := t.TempDir()
 		path := filepath.Join(tmpDir, "wt", "config.toml")
 
@@ -152,6 +158,7 @@ func TestWriteDefaultConfig(t *testing.T) {
 	})
 
 	t.Run("fails if file exists without force", func(t *testing.T) {
+		t.Parallel()
 		tmpDir := t.TempDir()
 		path := filepath.Join(tmpDir, "config.toml")
 
@@ -169,6 +176,7 @@ func TestWriteDefaultConfig(t *testing.T) {
 	})
 
 	t.Run("overwrites with force", func(t *testing.T) {
+		t.Parallel()
 		tmpDir := t.TempDir()
 		path := filepath.Join(tmpDir, "config.toml")
 
@@ -190,7 +198,26 @@ func TestWriteDefaultConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("mkdirall failure", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		// Place a file where MkdirAll needs a directory.
+		blocker := filepath.Join(tmpDir, "blocker")
+		if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(blocker, "nested", "config.toml")
+		err := writeDefaultConfig(path, false)
+		if err == nil {
+			t.Fatal("expected error when MkdirAll fails")
+		}
+		if !strings.Contains(err.Error(), "failed to create config directory") {
+			t.Errorf("error = %q, want 'failed to create config directory'", err)
+		}
+	})
+
 	t.Run("creates parent directories", func(t *testing.T) {
+		t.Parallel()
 		tmpDir := t.TempDir()
 		path := filepath.Join(tmpDir, "deep", "nested", "config.toml")
 
@@ -385,6 +412,52 @@ strategy = "global"
 		}
 	})
 
+	t.Run("WORKTREE_SEPARATOR env var override", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		cfgPath := filepath.Join(tmpDir, "config.toml")
+		cfgContent := `separator = "/"
+`
+		if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		os.Setenv("WORKTREE_ROOT", "")
+		os.Setenv("WORKTREE_STRATEGY", "")
+		os.Setenv("WORKTREE_PATTERN", "")
+		os.Setenv("WORKTREE_SEPARATOR", "-")
+		os.Setenv("WT_CONFIG", cfgPath)
+		configFlag = ""
+		t.Cleanup(func() { os.Unsetenv("WORKTREE_SEPARATOR") })
+
+		loadWorktreeConfig()
+
+		if appCfg.Separator != "-" {
+			t.Errorf("Separator = %q, want -", appCfg.Separator)
+		}
+		if appCfg.ConfigSources.Separator != "env: WORKTREE_SEPARATOR" {
+			t.Errorf("ConfigSources.Separator = %q, want 'env: WORKTREE_SEPARATOR'",
+				appCfg.ConfigSources.Separator)
+		}
+	})
+
+	t.Run("WORKTREE_PATTERN env var override", func(t *testing.T) {
+		os.Setenv("WORKTREE_ROOT", "")
+		os.Setenv("WORKTREE_STRATEGY", "")
+		os.Setenv("WORKTREE_PATTERN", "{.worktreeRoot}/env/{.branch}")
+		os.Setenv("WT_CONFIG", "/nonexistent/config.toml")
+		configFlag = ""
+
+		loadWorktreeConfig()
+
+		if appCfg.Pattern != "{.worktreeRoot}/env/{.branch}" {
+			t.Errorf("Pattern = %q, want '{.worktreeRoot}/env/{.branch}'", appCfg.Pattern)
+		}
+		if appCfg.ConfigSources.Pattern != "env: WORKTREE_PATTERN" {
+			t.Errorf("ConfigSources.Pattern = %q, want 'env: WORKTREE_PATTERN'",
+				appCfg.ConfigSources.Pattern)
+		}
+	})
+
 	t.Run("strategy is lowercased and trimmed", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		cfgPath := filepath.Join(tmpDir, "config.toml")
@@ -546,6 +619,8 @@ func TestConfigShowPatternParityBetweenTextAndJSON_Config(t *testing.T) {
 }
 
 func TestParseConfigFileWithHooksAndSections(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "config.toml")
 	content := `root = "/custom/root"
@@ -582,6 +657,8 @@ post_create = ["echo post"]
 }
 
 func TestParseConfigFileIgnoresInvalidLines(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "config.toml")
 	content := `# comment
@@ -606,6 +683,8 @@ strategy = "global"
 }
 
 func TestParseConfigFileNonexistent(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseConfigFile("/nonexistent/path/config.toml")
 	if err == nil {
 		t.Fatal("expected error for nonexistent file")
@@ -613,6 +692,8 @@ func TestParseConfigFileNonexistent(t *testing.T) {
 }
 
 func TestParseStringArray(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		input string
@@ -652,6 +733,7 @@ func TestParseStringArray(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := parseStringArray(tt.input)
 			if len(got) != len(tt.want) {
 				t.Fatalf("parseStringArray(%q) = %v (len %d), want %v (len %d)",
@@ -668,6 +750,8 @@ func TestParseStringArray(t *testing.T) {
 }
 
 func TestSetHookField(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		section string
@@ -828,6 +912,7 @@ func TestSetHookField(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var hooks Hooks
 			setHookField(&hooks, tt.section, tt.key, tt.val)
 			tt.check(t, hooks)
@@ -835,7 +920,18 @@ func TestSetHookField(t *testing.T) {
 	}
 }
 
+func TestParseStringArrayWhitespaceOnly(t *testing.T) {
+	t.Parallel()
+
+	got := parseStringArray("[  ]")
+	if got != nil {
+		t.Errorf("parseStringArray(\"[  ]\") = %v, want nil", got)
+	}
+}
+
 func TestUnquoteStringEdgeCases(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		input string
@@ -865,6 +961,7 @@ func TestUnquoteStringEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := unquoteString(tt.input)
 			if got != tt.want {
 				t.Errorf("unquoteString(%q) = %q, want %q", tt.input, got, tt.want)

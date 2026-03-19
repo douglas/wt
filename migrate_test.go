@@ -598,9 +598,12 @@ func TestMigrateJSONOutput(t *testing.T) {
 }
 
 func TestDetectTargetState(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 
 	t.Run("missing path", func(t *testing.T) {
+		t.Parallel()
 		state, err := detectTargetState(filepath.Join(tmpDir, "does-not-exist"))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -611,6 +614,7 @@ func TestDetectTargetState(t *testing.T) {
 	})
 
 	t.Run("file target", func(t *testing.T) {
+		t.Parallel()
 		f := filepath.Join(tmpDir, "afile")
 		if err := os.WriteFile(f, []byte("data"), 0o644); err != nil {
 			t.Fatal(err)
@@ -625,6 +629,7 @@ func TestDetectTargetState(t *testing.T) {
 	})
 
 	t.Run("empty dir", func(t *testing.T) {
+		t.Parallel()
 		d := filepath.Join(tmpDir, "emptydir")
 		if err := os.Mkdir(d, 0o755); err != nil {
 			t.Fatal(err)
@@ -639,6 +644,7 @@ func TestDetectTargetState(t *testing.T) {
 	})
 
 	t.Run("non-empty dir", func(t *testing.T) {
+		t.Parallel()
 		d := filepath.Join(tmpDir, "fulldir")
 		if err := os.Mkdir(d, 0o755); err != nil {
 			t.Fatal(err)
@@ -657,6 +663,8 @@ func TestDetectTargetState(t *testing.T) {
 }
 
 func TestIsPathWithinRoot(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		path string
@@ -691,6 +699,7 @@ func TestIsPathWithinRoot(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := isPathWithinRoot(tt.path, tt.root)
 			if got != tt.want {
 				t.Errorf("isPathWithinRoot(%q, %q) = %v, want %v",
@@ -701,9 +710,12 @@ func TestIsPathWithinRoot(t *testing.T) {
 }
 
 func TestCanonicalExistingPath(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 
 	t.Run("existing absolute path", func(t *testing.T) {
+		t.Parallel()
 		got := canonicalExistingPath(tmpDir)
 		if !filepath.IsAbs(got) {
 			t.Errorf("canonicalExistingPath(%q) = %q, expected absolute", tmpDir, got)
@@ -717,6 +729,7 @@ func TestCanonicalExistingPath(t *testing.T) {
 	})
 
 	t.Run("relative path within existing dir", func(t *testing.T) {
+		t.Parallel()
 		// canonicalExistingPath uses filepath.Abs which resolves relative to cwd
 		got := canonicalExistingPath(".")
 		if !filepath.IsAbs(got) {
@@ -726,6 +739,8 @@ func TestCanonicalExistingPath(t *testing.T) {
 }
 
 func TestResolvePrimaryCheckoutTarget(t *testing.T) {
+	t.Parallel()
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skip("cannot determine home directory")
@@ -755,6 +770,7 @@ func TestResolvePrimaryCheckoutTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := resolvePrimaryCheckoutTarget(tt.info)
 			if got != tt.want {
 				t.Errorf("resolvePrimaryCheckoutTarget(%+v) = %q, want %q",
@@ -765,7 +781,10 @@ func TestResolvePrimaryCheckoutTarget(t *testing.T) {
 }
 
 func TestPrepareMigrateTarget(t *testing.T) {
+	t.Parallel()
+
 	t.Run("missing target creates parent", func(t *testing.T) {
+		t.Parallel()
 		tmpDir := t.TempDir()
 		target := filepath.Join(tmpDir, "sub", "target")
 		if err := prepareMigrateTarget(target, false); err != nil {
@@ -778,6 +797,7 @@ func TestPrepareMigrateTarget(t *testing.T) {
 	})
 
 	t.Run("empty dir removed", func(t *testing.T) {
+		t.Parallel()
 		tmpDir := t.TempDir()
 		target := filepath.Join(tmpDir, "emptydir")
 		if err := os.Mkdir(target, 0o755); err != nil {
@@ -792,6 +812,7 @@ func TestPrepareMigrateTarget(t *testing.T) {
 	})
 
 	t.Run("non-empty dir without force errors", func(t *testing.T) {
+		t.Parallel()
 		tmpDir := t.TempDir()
 		target := filepath.Join(tmpDir, "fulldir")
 		if err := os.Mkdir(target, 0o755); err != nil {
@@ -810,6 +831,7 @@ func TestPrepareMigrateTarget(t *testing.T) {
 	})
 
 	t.Run("non-empty dir with force removed", func(t *testing.T) {
+		t.Parallel()
 		tmpDir := t.TempDir()
 		target := filepath.Join(tmpDir, "fulldir2")
 		if err := os.Mkdir(target, 0o755); err != nil {
@@ -827,6 +849,7 @@ func TestPrepareMigrateTarget(t *testing.T) {
 	})
 
 	t.Run("file without force errors", func(t *testing.T) {
+		t.Parallel()
 		tmpDir := t.TempDir()
 		target := filepath.Join(tmpDir, "afile")
 		if err := os.WriteFile(target, []byte("data"), 0o644); err != nil {
@@ -841,7 +864,32 @@ func TestPrepareMigrateTarget(t *testing.T) {
 		}
 	})
 
+	t.Run("mkdirall fails when parent dir is read-only", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		roDir := filepath.Join(tmpDir, "readonly")
+		if err := os.MkdirAll(roDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(roDir, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(roDir, 0o755) })
+
+		// target doesn't exist (stat returns IsNotExist → targetMissing).
+		// MkdirAll for filepath.Dir(target) fails because roDir is read-only.
+		target := filepath.Join(roDir, "newdir", "target")
+		err := prepareMigrateTarget(target, false)
+		if err == nil {
+			t.Fatal("expected error when parent creation fails")
+		}
+		if !strings.Contains(err.Error(), "failed to create target parent") {
+			t.Errorf("error = %q, want 'failed to create target parent'", err)
+		}
+	})
+
 	t.Run("file with force removed", func(t *testing.T) {
+		t.Parallel()
 		tmpDir := t.TempDir()
 		target := filepath.Join(tmpDir, "afile2")
 		if err := os.WriteFile(target, []byte("data"), 0o644); err != nil {
@@ -1445,6 +1493,229 @@ func TestBuildMigratePlan(t *testing.T) {
 		}
 		if !strings.Contains(linked.Reason, "target path exists and is non-empty") {
 			t.Errorf("reason = %q, want 'target path exists and is non-empty'",
+				linked.Reason)
+		}
+	})
+
+	t.Run("primary target empty dir", func(t *testing.T) {
+		mock := withMockGit(t)
+		withAppConfig(t)
+
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		tmpDir := t.TempDir()
+		worktreeRoot := filepath.Join(tmpDir, "worktrees")
+		primaryPath := filepath.Join(worktreeRoot, "myrepo")
+		if err := os.MkdirAll(primaryPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		appCfg.Root = worktreeRoot
+		appCfg.Strategy = "global"
+		appCfg.Pattern = ""
+		appCfg.Separator = "/"
+
+		mock.outputs["rev-parse --show-toplevel"] = []byte(primaryPath)
+		mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/myrepo.git")
+		mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+		mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+		mock.outputs["worktree list --porcelain"] = []byte(
+			"worktree " + primaryPath + "\nHEAD abc\nbranch refs/heads/main\n\n")
+
+		// Create empty target directory at ~/src/owner/myrepo.
+		targetPath := filepath.Join(home, "src", "owner", "myrepo")
+		if err := os.MkdirAll(targetPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.RemoveAll(filepath.Join(home, "src", "owner", "myrepo")) })
+
+		entries := []parsedWorktree{
+			{Path: primaryPath, Branch: "main", Main: true},
+		}
+
+		plan, err := buildMigratePlan(entries, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if len(plan) != 1 {
+			t.Fatalf("expected 1 plan item, got %d", len(plan))
+		}
+		if plan[0].Action != migrateActionMove {
+			t.Errorf("primary action = %q, want move", plan[0].Action)
+		}
+		if !strings.Contains(plan[0].Reason, "empty") {
+			t.Errorf("reason = %q, want 'empty'", plan[0].Reason)
+		}
+	})
+
+	t.Run("linked worktree target is empty dir", func(t *testing.T) {
+		mock := withMockGit(t)
+		withAppConfig(t)
+
+		tmpDir := t.TempDir()
+		worktreeRoot := filepath.Join(tmpDir, "worktrees")
+		repoRoot := filepath.Join(tmpDir, "repo")
+		appCfg.Root = worktreeRoot
+		appCfg.Strategy = "global"
+		appCfg.Pattern = ""
+		appCfg.Separator = "/"
+
+		mock.outputs["rev-parse --show-toplevel"] = []byte(repoRoot)
+		mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/myrepo.git")
+		mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+		mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+		mock.outputs["worktree list --porcelain"] = []byte(
+			"worktree " + repoRoot + "\nHEAD abc\nbranch refs/heads/main\n\n")
+
+		oldPath := filepath.Join(tmpDir, "legacy", "feat")
+
+		// Create empty target directory.
+		targetPath := filepath.Join(worktreeRoot, "myrepo", "feat")
+		if err := os.MkdirAll(targetPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		entries := []parsedWorktree{
+			{Path: repoRoot, Branch: "main", Main: true},
+			{Path: oldPath, Branch: "feat"},
+		}
+
+		plan, err := buildMigratePlan(entries, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		var linked *migrateItem
+		for i := range plan {
+			if !plan[i].Primary {
+				linked = &plan[i]
+				break
+			}
+		}
+		if linked == nil {
+			t.Fatal("no linked worktree in plan")
+		}
+		if linked.Action != migrateActionMove {
+			t.Errorf("linked action = %q, want move", linked.Action)
+		}
+		if !strings.Contains(linked.Reason, "empty") {
+			t.Errorf("reason = %q, want 'empty'", linked.Reason)
+		}
+	})
+
+	t.Run("linked worktree target is file with force", func(t *testing.T) {
+		mock := withMockGit(t)
+		withAppConfig(t)
+
+		tmpDir := t.TempDir()
+		worktreeRoot := filepath.Join(tmpDir, "worktrees")
+		repoRoot := filepath.Join(tmpDir, "repo")
+		appCfg.Root = worktreeRoot
+		appCfg.Strategy = "global"
+		appCfg.Pattern = ""
+		appCfg.Separator = "/"
+
+		mock.outputs["rev-parse --show-toplevel"] = []byte(repoRoot)
+		mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/myrepo.git")
+		mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+		mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+		mock.outputs["worktree list --porcelain"] = []byte(
+			"worktree " + repoRoot + "\nHEAD abc\nbranch refs/heads/main\n\n")
+
+		oldPath := filepath.Join(tmpDir, "legacy", "feat")
+
+		// Create a file at the target path.
+		targetPath := filepath.Join(worktreeRoot, "myrepo", "feat")
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(targetPath, []byte("blocker"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		entries := []parsedWorktree{
+			{Path: repoRoot, Branch: "main", Main: true},
+			{Path: oldPath, Branch: "feat"},
+		}
+
+		plan, err := buildMigratePlan(entries, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		var linked *migrateItem
+		for i := range plan {
+			if !plan[i].Primary {
+				linked = &plan[i]
+				break
+			}
+		}
+		if linked == nil {
+			t.Fatal("no linked worktree in plan")
+		}
+		if linked.Action != migrateActionMoveForce {
+			t.Errorf("linked action = %q, want move-force", linked.Action)
+		}
+	})
+
+	t.Run("linked worktree target is file without force", func(t *testing.T) {
+		mock := withMockGit(t)
+		withAppConfig(t)
+
+		tmpDir := t.TempDir()
+		worktreeRoot := filepath.Join(tmpDir, "worktrees")
+		repoRoot := filepath.Join(tmpDir, "repo")
+		appCfg.Root = worktreeRoot
+		appCfg.Strategy = "global"
+		appCfg.Pattern = ""
+		appCfg.Separator = "/"
+
+		mock.outputs["rev-parse --show-toplevel"] = []byte(repoRoot)
+		mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/myrepo.git")
+		mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+		mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+		mock.outputs["worktree list --porcelain"] = []byte(
+			"worktree " + repoRoot + "\nHEAD abc\nbranch refs/heads/main\n\n")
+
+		oldPath := filepath.Join(tmpDir, "legacy", "feat")
+
+		// Create a file at the target path.
+		targetPath := filepath.Join(worktreeRoot, "myrepo", "feat")
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(targetPath, []byte("blocker"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		entries := []parsedWorktree{
+			{Path: repoRoot, Branch: "main", Main: true},
+			{Path: oldPath, Branch: "feat"},
+		}
+
+		plan, err := buildMigratePlan(entries, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		var linked *migrateItem
+		for i := range plan {
+			if !plan[i].Primary {
+				linked = &plan[i]
+				break
+			}
+		}
+		if linked == nil {
+			t.Fatal("no linked worktree in plan")
+		}
+		if linked.Action != migrateActionSkip {
+			t.Errorf("linked action = %q, want skip", linked.Action)
+		}
+		if !strings.Contains(linked.Reason, "target path exists as file") {
+			t.Errorf("reason = %q, want 'target path exists as file'",
 				linked.Reason)
 		}
 	})

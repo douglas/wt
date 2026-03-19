@@ -91,6 +91,8 @@ func TestDetectShell(t *testing.T) {
 }
 
 func TestSupportedShells(t *testing.T) {
+	t.Parallel()
+
 	// Verify all expected shells are in the map
 	expected := []string{"bash", "zsh", "powershell", "pwsh"}
 	for _, shell := range expected {
@@ -158,6 +160,8 @@ func TestGetShellConfigPathZshRespectsZdotdir(t *testing.T) {
 }
 
 func TestGetShellConfigContent(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		shell    string
@@ -186,6 +190,7 @@ func TestGetShellConfigContent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := getShellConfigContent(tt.shell)
 			for _, want := range tt.contains {
 				if !strings.Contains(got, want) {
@@ -403,6 +408,8 @@ func TestDryRun(t *testing.T) {
 }
 
 func TestInstallShellConfigDryRunUpdateExisting(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, ".bashrc")
 
@@ -427,6 +434,8 @@ func TestInstallShellConfigDryRunUpdateExisting(t *testing.T) {
 }
 
 func TestInstallShellConfigUnsupportedShell(t *testing.T) {
+	t.Parallel()
+
 	err := installShellConfig("/tmp/test", "fish", false, true)
 	if err == nil {
 		t.Fatal("expected error for unsupported shell")
@@ -525,6 +534,8 @@ func TestRemoveShellConfigNoMarkers(t *testing.T) {
 }
 
 func TestInitJSONOutput(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("Skipping init JSON integration test in short mode")
 	}
@@ -663,5 +674,140 @@ func TestGetShellConfigPathPowershell(t *testing.T) {
 	}
 	if got == "" {
 		t.Error("getShellConfigPath(\"powershell\") should not return empty string")
+	}
+}
+
+func TestInstallShellConfig_ReadError(t *testing.T) {
+	t.Parallel()
+
+	// configPath is a directory → ReadFile fails with "is a directory".
+	tmpDir := t.TempDir()
+	err := installShellConfig(tmpDir, "bash", false, true)
+	if err == nil {
+		t.Fatal("expected error when configPath is a directory")
+	}
+	if !strings.Contains(err.Error(), "failed to read") {
+		t.Errorf("error = %q, want it to contain 'failed to read'", err)
+	}
+}
+
+func TestInstallShellConfig_OpenFileError(t *testing.T) {
+	t.Parallel()
+
+	// configPath doesn't exist → ReadFile returns IsNotExist (OK).
+	// Parent dir is read-only → MkdirAll/OpenFile fails.
+	tmpDir := t.TempDir()
+	roDir := filepath.Join(tmpDir, "readonly")
+	if err := os.MkdirAll(roDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(roDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(roDir, 0o755) })
+
+	configPath := filepath.Join(roDir, "subdir", ".bashrc")
+	err := installShellConfig(configPath, "bash", false, true)
+	if err == nil {
+		t.Fatal("expected error when parent dir creation is blocked")
+	}
+	if !strings.Contains(err.Error(), "failed to create config directory") &&
+		!strings.Contains(err.Error(), "failed to open") {
+		t.Errorf("error = %q, want 'failed to create config directory' or 'failed to open'", err)
+	}
+}
+
+func TestInstallShellConfig_JSONModeNewFile(t *testing.T) {
+	withAppConfig(t)
+	appCfg.OutputFormat = "json"
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+
+	output := captureStdout(t, func() {
+		if err := installShellConfig(configPath, "bash", false, true); err != nil {
+			t.Fatalf("installShellConfig failed: %v", err)
+		}
+	})
+
+	// JSON mode should suppress text output.
+	if strings.Contains(output, "Added") || strings.Contains(output, "source") {
+		t.Errorf("expected no text output in JSON mode, got: %s", output)
+	}
+
+	// File should still be written.
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config: %v", err)
+	}
+	if !strings.Contains(string(content), markerStart) {
+		t.Error("config file missing start marker")
+	}
+}
+
+func TestRemoveShellConfig_ReadError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	err := removeShellConfig(tmpDir, "bash", false)
+	if err == nil {
+		t.Fatal("expected error when configPath is a directory")
+	}
+	if !strings.Contains(err.Error(), "failed to read") {
+		t.Errorf("error = %q, want it to contain 'failed to read'", err)
+	}
+}
+
+func TestRemoveShellConfig_MalformedMarkers(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+	// End marker before start marker → malformed.
+	content := markerEnd + "\nsome content\n" + markerStart + "\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := removeShellConfig(configPath, "bash", false)
+	if err == nil {
+		t.Fatal("expected error for malformed markers")
+	}
+	if !strings.Contains(err.Error(), "malformed") {
+		t.Errorf("error = %q, want it to contain 'malformed'", err)
+	}
+}
+
+func TestRemoveShellConfig_JSONMode(t *testing.T) {
+	withAppConfig(t)
+	appCfg.OutputFormat = "json"
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+
+	// First, write a config with markers.
+	content := "# preamble\n" + markerStart + "\neval \"$(wt shellenv)\"\n" + markerEnd + "\n# postamble\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := removeShellConfig(configPath, "bash", false); err != nil {
+			t.Fatalf("removeShellConfig failed: %v", err)
+		}
+	})
+
+	// JSON mode should suppress text output.
+	if strings.Contains(output, "Removed") {
+		t.Errorf("expected no text output in JSON mode, got: %s", output)
+	}
+
+	// Markers should be removed from file.
+	after, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config: %v", err)
+	}
+	if strings.Contains(string(after), markerStart) {
+		t.Error("config still contains start marker after removal")
 	}
 }
