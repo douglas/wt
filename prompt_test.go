@@ -108,6 +108,20 @@ func TestSelectItem(t *testing.T) {
 			wantIdx: -1,
 			wantErr: "invalid selection",
 		},
+		{
+			name:    "ESC byte cancels selection",
+			input:   "\x1b\n",
+			items:   items,
+			wantIdx: -1,
+			wantErr: "selection cancelled",
+		},
+		{
+			name:    "Ctrl-C cancels selection",
+			input:   "\x03\n",
+			items:   items,
+			wantIdx: -1,
+			wantErr: "selection cancelled",
+		},
 	}
 
 	for _, tt := range tests {
@@ -156,6 +170,8 @@ func TestConfirmPrompt(t *testing.T) {
 		{name: "no", input: "no\n", want: false},
 		{name: "empty input", input: "\n", want: false},
 		{name: "EOF", input: "", want: false},
+		{name: "ESC declines", input: "\x1b\n", want: false},
+		{name: "Ctrl-C declines", input: "\x03\n", want: false},
 	}
 
 	for _, tt := range tests {
