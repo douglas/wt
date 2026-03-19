@@ -50,6 +50,8 @@ func topicHasTextAndJSONExamples(topic exampleTopic) bool {
 }
 
 func TestExamplesRejectsTopicArgument(t *testing.T) {
+	t.Parallel()
+
 	err := examplesCmd.Args(examplesCmd, []string{"create"})
 	if err == nil {
 		t.Fatal("expected examples command to reject topic arguments")
@@ -57,6 +59,8 @@ func TestExamplesRejectsTopicArgument(t *testing.T) {
 }
 
 func TestSortedTopicsIncludesCreate(t *testing.T) {
+	t.Parallel()
+
 	topics := sortedTopics()
 	found := false
 	for _, topic := range topics {
@@ -71,6 +75,8 @@ func TestSortedTopicsIncludesCreate(t *testing.T) {
 }
 
 func TestSortedTopicsIncludesMigrate(t *testing.T) {
+	t.Parallel()
+
 	topics := sortedTopics()
 	found := false
 	for _, topic := range topics {
@@ -85,6 +91,8 @@ func TestSortedTopicsIncludesMigrate(t *testing.T) {
 }
 
 func TestExamplesCoverAllTopLevelCommands(t *testing.T) {
+	t.Parallel()
+
 	expectedTopics := []string{
 		"checkout",
 		"create",
@@ -111,6 +119,8 @@ func TestExamplesCoverAllTopLevelCommands(t *testing.T) {
 }
 
 func TestCreateExamplesIncludeOutcomeAndFailureModes(t *testing.T) {
+	t.Parallel()
+
 	topic, ok := exampleCatalog["create"]
 	if !ok {
 		t.Fatal("expected create topic in catalog")
@@ -127,6 +137,8 @@ func TestCreateExamplesIncludeOutcomeAndFailureModes(t *testing.T) {
 }
 
 func TestRemoveExampleIncludesPathExample(t *testing.T) {
+	t.Parallel()
+
 	topic, ok := exampleCatalog["remove"]
 	if !ok {
 		t.Fatal("expected remove topic in catalog")
@@ -143,6 +155,8 @@ func TestRemoveExampleIncludesPathExample(t *testing.T) {
 }
 
 func TestListExampleIncludesRawTextSample(t *testing.T) {
+	t.Parallel()
+
 	topic, ok := exampleCatalog["list"]
 	if !ok {
 		t.Fatal("expected list topic in catalog")
@@ -156,6 +170,8 @@ func TestListExampleIncludesRawTextSample(t *testing.T) {
 }
 
 func TestRemoveJSONExampleIncludesSamplePayload(t *testing.T) {
+	t.Parallel()
+
 	topic, ok := exampleCatalog["remove"]
 	if !ok {
 		t.Fatal("expected remove topic in catalog")
@@ -169,6 +185,8 @@ func TestRemoveJSONExampleIncludesSamplePayload(t *testing.T) {
 }
 
 func TestAllExamplesHaveConcreteSamples(t *testing.T) {
+	t.Parallel()
+
 	for topicName, topic := range exampleCatalog {
 		for _, ex := range topic.Examples {
 			if strings.Contains(ex.Command, "--format json") {
@@ -186,6 +204,8 @@ func TestAllExamplesHaveConcreteSamples(t *testing.T) {
 }
 
 func TestListTextExampleLooksRawStyle(t *testing.T) {
+	t.Parallel()
+
 	topic := exampleCatalog["list"]
 	if len(topic.Examples) == 0 {
 		t.Fatal("expected list examples")
@@ -196,6 +216,8 @@ func TestListTextExampleLooksRawStyle(t *testing.T) {
 }
 
 func TestCreateRemoveMigrateExamplesHaveStrategyVariantsInPathExamples(t *testing.T) {
+	t.Parallel()
+
 	for _, topicName := range []string{"create", "remove", "migrate"} {
 		topic, ok := exampleCatalog[topicName]
 		if !ok {
@@ -221,6 +243,8 @@ func TestCreateRemoveMigrateExamplesHaveStrategyVariantsInPathExamples(t *testin
 }
 
 func TestCreateRemoveMigrateStrategyExamplesAppearInTextAndJSONSamples(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		topicName   string
 		textNeedle  string
@@ -275,6 +299,8 @@ func TestCreateRemoveMigrateStrategyExamplesAppearInTextAndJSONSamples(t *testin
 }
 
 func TestCreateRemoveMigrateTopicsIncludeTextAndJSONExamples(t *testing.T) {
+	t.Parallel()
+
 	for _, topicName := range []string{"create", "remove", "migrate"} {
 		topic, ok := exampleCatalog[topicName]
 		if !ok {
@@ -324,6 +350,8 @@ func TestRenderExamplesTextPrintsAllListItems(t *testing.T) {
 }
 
 func TestOrderedTopics(t *testing.T) {
+	t.Parallel()
+
 	topics := orderedTopics()
 	if len(topics) == 0 {
 		t.Fatal("orderedTopics() returned empty slice")
@@ -340,6 +368,8 @@ func TestOrderedTopics(t *testing.T) {
 }
 
 func TestSplitLines(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		input string
@@ -352,6 +382,7 @@ func TestSplitLines(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := splitLines(tt.input)
 			if len(got) != tt.want {
 				t.Errorf("splitLines(%q) returned %d items, want %d", tt.input, len(got), tt.want)

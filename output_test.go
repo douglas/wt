@@ -202,6 +202,8 @@ func TestEmitJSONError(t *testing.T) {
 }
 
 func TestCommandPathNilCmd(t *testing.T) {
+	t.Parallel()
+
 	got := commandPath(nil)
 	if got != "wt" {
 		t.Fatalf("commandPath(nil) = %q, want %q", got, "wt")
