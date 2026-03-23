@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -288,5 +289,225 @@ func TestCheckoutPROrMR(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests migrated from mock_test.go
+// ---------------------------------------------------------------------------
+
+func TestParseGitHubBranchNameInvalidJSON(t *testing.T) {
+	_, err := parseGitHubBranchName("not json")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestParseGitHubBranchNameEmpty(t *testing.T) {
+	_, err := parseGitHubBranchName(`{"headRefName":""}`)
+	if err == nil {
+		t.Fatal("expected error for empty branch")
+	}
+}
+
+func TestParseGitLabBranchNameInvalidJSON(t *testing.T) {
+	_, err := parseGitLabBranchName("not json")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestParseGitLabBranchNameEmpty(t *testing.T) {
+	_, err := parseGitLabBranchName(`{"source_branch":""}`)
+	if err == nil {
+		t.Fatal("expected error for empty branch")
+	}
+}
+
+func TestGetPRBranchNameInvalidRemoteType(t *testing.T) {
+	t.Parallel()
+
+	_, err := getPRBranchName("123", RemoteUnknown)
+	if err == nil {
+		t.Fatal("expected error for unknown remote type")
+	}
+}
+
+func TestGetPRBranchName_GitLab(t *testing.T) {
+	ext := withMockExt(t)
+	ext.outputs["glab mr view 55 --output json"] = []byte(`{"source_branch":"fix-123"}`)
+
+	branch, err := getPRBranchName("55", RemoteGitLab)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if branch != "fix-123" {
+		t.Errorf("branch = %q, want fix-123", branch)
+	}
+}
+
+func TestGetPRBranchName_GitLabError(t *testing.T) {
+	ext := withMockExt(t)
+	ext.errors["glab mr view 55 --output json"] = fmt.Errorf("not found")
+
+	_, err := getPRBranchName("55", RemoteGitLab)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "failed to get MR branch name") {
+		t.Errorf("error = %q, want 'failed to get MR branch name'", err)
+	}
+}
+
+func TestCheckoutPROrMR_JSONExistingWorktree(t *testing.T) {
+	mock := withMockGit(t)
+	ext := withMockExt(t)
+	withMockLookPath(t, map[string]bool{"gh": true})
+	withAppConfig(t)
+	appCfg.OutputFormat = "json"
+	appCfg.Strategy = "global"
+	appCfg.Root = t.TempDir()
+
+	ext.outputs["gh pr view 42 --json headRefName"] = []byte(`{"headRefName":"feature-x"}`)
+	mock.outputs["rev-parse --show-toplevel"] = []byte("/home/user/repo")
+	mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/repo.git")
+	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo\n" +
+			"HEAD abc123\n" +
+			"branch refs/heads/main\n" +
+			"\n" +
+			"worktree /tmp/wt/feature-x\n" +
+			"HEAD def456\n" +
+			"branch refs/heads/feature-x\n" +
+			"\n")
+
+	output := captureStdout(t, func() {
+		err := checkoutPROrMR(prCmd, "42", RemoteGitHub)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	// Should emit JSON, not text.
+	if !strings.Contains(output, `"status":"exists"`) {
+		t.Errorf("expected JSON with status:exists, got: %s", output)
+	}
+}
+
+func TestCheckoutPROrMR_GitLabCreatesWorktreeJSON(t *testing.T) {
+	mock := withMockGit(t)
+	ext := withMockExt(t)
+	withMockLookPath(t, map[string]bool{"glab": true})
+	withAppConfig(t)
+	appCfg.OutputFormat = "json"
+	appCfg.Strategy = "global"
+	appCfg.Root = t.TempDir()
+
+	ext.outputs["glab mr view 99 --output json"] = []byte(`{"source_branch":"fix-bug"}`)
+	mock.outputs["rev-parse --show-toplevel"] = []byte("/home/user/repo")
+	mock.outputs["remote get-url origin"] = []byte("git@gitlab.com:owner/repo.git")
+	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo\n" +
+			"HEAD abc123\n" +
+			"branch refs/heads/main\n" +
+			"\n")
+	mock.outputs["show-ref --verify --quiet refs/heads/fix-bug"] = []byte("")
+	mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+
+	output := captureStdout(t, func() {
+		err := checkoutPROrMR(mrCmd, "99", RemoteGitLab)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, `"status":"created"`) {
+		t.Errorf("expected JSON with status:created, got: %s", output)
+	}
+}
+
+func TestCheckoutPROrMR_FetchFallback(t *testing.T) {
+	mock := withMockGit(t)
+	ext := withMockExt(t)
+	withMockLookPath(t, map[string]bool{"gh": true})
+	withAppConfig(t)
+	appCfg.Strategy = "global"
+	appCfg.Root = t.TempDir()
+
+	ext.outputs["gh pr view 42 --json headRefName"] = []byte(`{"headRefName":"fork-branch"}`)
+	mock.outputs["rev-parse --show-toplevel"] = []byte("/home/user/repo")
+	mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/repo.git")
+	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+	mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo\nHEAD abc\nbranch refs/heads/main\n\n")
+	// First fetch fails, triggers fallback.
+	mock.errors["fetch origin fork-branch"] = fmt.Errorf("remote branch not found")
+	// Branch exists locally.
+	mock.outputs["show-ref --verify --quiet refs/heads/fork-branch"] = []byte("")
+
+	output := captureStdout(t, func() {
+		err := checkoutPROrMR(prCmd, "42", RemoteGitHub)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "fork-branch") {
+		// Text output should mention the branch.
+		t.Logf("output: %s", output)
+	}
+}
+
+func TestCheckoutPROrMR_WorktreeCreateFails(t *testing.T) {
+	mock := withMockGit(t)
+	ext := withMockExt(t)
+	withMockLookPath(t, map[string]bool{"gh": true})
+	withAppConfig(t)
+	appCfg.Strategy = "global"
+	appCfg.Root = t.TempDir()
+
+	ext.outputs["gh pr view 42 --json headRefName"] = []byte(`{"headRefName":"new-feat"}`)
+	mock.outputs["rev-parse --show-toplevel"] = []byte("/home/user/repo")
+	mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/repo.git")
+	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+	mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo\nHEAD abc\nbranch refs/heads/main\n\n")
+	mock.outputs["show-ref --verify --quiet refs/heads/new-feat"] = []byte("")
+	// Worktree add fails.
+	mock.errors["worktree add "+filepath.Join(appCfg.Root, "repo", "new-feat")+" new-feat"] = fmt.Errorf("worktree add failed")
+
+	err := checkoutPROrMR(prCmd, "42", RemoteGitHub)
+	if err == nil {
+		t.Fatal("expected error when worktree creation fails")
+	}
+	if !strings.Contains(err.Error(), "failed to create worktree") {
+		t.Errorf("error = %q, want 'failed to create worktree'", err)
+	}
+}
+
+func TestCheckoutPROrMR_GetRepoInfoFails(t *testing.T) {
+	mock := withMockGit(t)
+	ext := withMockExt(t)
+	withMockLookPath(t, map[string]bool{"gh": true})
+	withAppConfig(t)
+
+	ext.outputs["gh pr view 42 --json headRefName"] = []byte(`{"headRefName":"feat"}`)
+	// getRepoInfo fails.
+	mock.errors["rev-parse --show-toplevel"] = fmt.Errorf("fatal")
+	mock.errors["rev-parse --is-bare-repository"] = fmt.Errorf("fatal")
+	// worktreeExists needs worktree list.
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n")
+
+	err := checkoutPROrMR(prCmd, "42", RemoteGitHub)
+	if err == nil {
+		t.Fatal("expected error when getRepoInfo fails")
+	}
+	if !strings.Contains(err.Error(), "not in a git repository") {
+		t.Errorf("error = %q, want 'not in a git repository'", err)
 	}
 }

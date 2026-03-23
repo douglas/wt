@@ -1778,3 +1778,157 @@ func TestBuildMigratePlan(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Tests migrated from mock_test.go
+// ---------------------------------------------------------------------------
+
+func TestApplyMigratePlan_JSONFailure(t *testing.T) {
+	withMockGit(t)
+	withAppConfig(t)
+	appCfg.OutputFormat = "json"
+
+	plan := []migrateItem{
+		{Branch: "main", From: "/nonexistent/from", To: "/tmp/to",
+			Primary: true, Action: migrateActionMove},
+	}
+
+	captureStdout(t, func() {
+		err := applyMigratePlan(migrateCmd, plan)
+		if err == nil {
+			t.Fatal("expected error for failed migration")
+		}
+		if !strings.Contains(err.Error(), "failures") {
+			t.Errorf("error = %q, want 'failures'", err)
+		}
+	})
+}
+
+func TestApplyMigratePlan_SecondaryPrepareFail(t *testing.T) {
+	mock := withMockGit(t)
+	withAppConfig(t)
+	appCfg.OutputFormat = "text"
+
+	// Target path can't be prepared because parent is read-only.
+	tmpDir := t.TempDir()
+	roDir := filepath.Join(tmpDir, "readonly")
+	if err := os.MkdirAll(roDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(roDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(roDir, 0o755) })
+
+	to := filepath.Join(roDir, "newdir", "feat")
+	plan := []migrateItem{
+		{Branch: "feat", From: "/old/feat", To: to, Action: migrateActionMove},
+	}
+
+	_ = mock // no git calls needed for prepare failure
+
+	output := captureStdout(t, func() {
+		err := applyMigratePlan(migrateCmd, plan)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+
+	if !strings.Contains(output, "Failed feat") {
+		t.Errorf("expected 'Failed feat' in output, got: %s", output)
+	}
+}
+
+func TestApplyMigratePlan_PrimaryMoveJSON(t *testing.T) {
+	mock := withMockGit(t)
+	withAppConfig(t)
+	appCfg.OutputFormat = "json"
+
+	tmpDir := t.TempDir()
+	from := filepath.Join(tmpDir, "old-primary")
+	to := filepath.Join(tmpDir, "new-primary")
+	if err := os.MkdirAll(from, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := []migrateItem{
+		{Branch: "main", From: from, To: to, Primary: true, Action: migrateActionMove},
+	}
+
+	mock.outputs[fmt.Sprintf("-C %s worktree repair", to)] = []byte("")
+
+	output := captureStdout(t, func() {
+		err := applyMigratePlan(migrateCmd, plan)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, `"migrated":1`) && !strings.Contains(output, `"migrated": 1`) {
+		t.Errorf("expected JSON with migrated:1, got: %s", output)
+	}
+}
+
+func TestApplyMigratePlan_PrimarySkipJSON(t *testing.T) {
+	withMockGit(t)
+	withAppConfig(t)
+	appCfg.OutputFormat = "json"
+
+	plan := []migrateItem{
+		{Branch: "main", From: "/from", Primary: true,
+			Action: migrateActionSkip, Reason: "already at target"},
+	}
+
+	output := captureStdout(t, func() {
+		err := applyMigratePlan(migrateCmd, plan)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, `"skipped":1`) && !strings.Contains(output, `"skipped": 1`) {
+		t.Errorf("expected JSON with skipped:1, got: %s", output)
+	}
+}
+
+func TestListParsedWorktrees_Error(t *testing.T) {
+	mock := withMockGit(t)
+	mock.errors["worktree list --porcelain"] = fmt.Errorf("git error")
+
+	_, err := listParsedWorktrees()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "failed to list worktrees") {
+		t.Errorf("error = %q, want 'failed to list worktrees'", err)
+	}
+}
+
+func TestBuildMigratePlan_RenderPathError(t *testing.T) {
+	mock := withMockGit(t)
+	withAppConfig(t)
+
+	tmpDir := t.TempDir()
+	repoRoot := filepath.Join(tmpDir, "repo")
+	appCfg.Root = filepath.Join(tmpDir, "worktrees")
+	appCfg.Strategy = "invalid-strategy-that-will-fail"
+	appCfg.Pattern = ""
+	appCfg.Separator = "/"
+
+	mock.outputs["rev-parse --show-toplevel"] = []byte(repoRoot)
+	mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/myrepo.git")
+	mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree " + repoRoot + "\nHEAD abc\nbranch refs/heads/main\n\n")
+
+	entries := []parsedWorktree{
+		{Path: repoRoot, Branch: "main", Main: true},
+		{Path: "/old/feat", Branch: "feat"},
+	}
+
+	_, err := buildMigratePlan(entries, false)
+	if err == nil {
+		t.Fatal("expected error when renderWorktreePath fails")
+	}
+}

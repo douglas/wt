@@ -575,6 +575,398 @@ func TestGetExistingWorktreeBranches(t *testing.T) {
 // isDirEmpty
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Tests migrated from mock_test.go
+// ---------------------------------------------------------------------------
+
+func TestGetDefaultBaseMock(t *testing.T) {
+	tests := []struct {
+		name       string
+		mockOutput []byte
+		mockError  error
+		want       string
+	}{
+		{
+			name:      "error falls back to main",
+			mockError: fmt.Errorf("not found"),
+			want:      "main",
+		},
+		{
+			name:       "success extracts branch",
+			mockOutput: []byte("refs/remotes/origin/develop"),
+			want:       "develop",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := withMockGit(t)
+			if tt.mockError != nil {
+				mock.errors["symbolic-ref refs/remotes/origin/HEAD"] = tt.mockError
+			} else {
+				mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = tt.mockOutput
+			}
+
+			if got := getDefaultBase(); got != tt.want {
+				t.Errorf("getDefaultBase() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBranchExistsMock(t *testing.T) {
+	tests := []struct {
+		name       string
+		setupMock  func(*mockGitRunner)
+		wantExists bool
+	}{
+		{
+			name: "local branch exists",
+			setupMock: func(mock *mockGitRunner) {
+				mock.outputs["show-ref --verify --quiet refs/heads/feature"] = []byte("")
+			},
+			wantExists: true,
+		},
+		{
+			name: "remote only",
+			setupMock: func(mock *mockGitRunner) {
+				mock.errors["show-ref --verify --quiet refs/heads/feature"] = fmt.Errorf("not found")
+				mock.outputs["show-ref --verify --quiet refs/remotes/origin/feature"] = []byte("")
+			},
+			wantExists: true,
+		},
+		{
+			name: "neither",
+			setupMock: func(mock *mockGitRunner) {
+				mock.errors["show-ref --verify --quiet refs/heads/feature"] = fmt.Errorf("not found")
+				mock.errors["show-ref --verify --quiet refs/remotes/origin/feature"] = fmt.Errorf("not found")
+			},
+			wantExists: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := withMockGit(t)
+			tt.setupMock(mock)
+
+			if got := branchExists("feature"); got != tt.wantExists {
+				t.Errorf("branchExists() = %v, want %v", got, tt.wantExists)
+			}
+		})
+	}
+}
+
+func TestGetAvailableBranchesMock(t *testing.T) {
+	tests := []struct {
+		name       string
+		mockOutput string
+		mockError  error
+		wantCount  int
+		wantErr    bool
+	}{
+		{
+			name:       "filters duplicates and remotes",
+			mockOutput: "main\nfeature\norigin/feature\norigin/HEAD -> origin/main\n",
+			wantCount:  2,
+		},
+		{
+			name:       "empty output",
+			mockOutput: "",
+			wantCount:  0,
+		},
+		{
+			name:      "error",
+			mockError: fmt.Errorf("git error"),
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := withMockGit(t)
+			if tt.mockError != nil {
+				mock.errors["branch -a --format=%(refname:short)"] = tt.mockError
+			} else {
+				mock.outputs["branch -a --format=%(refname:short)"] = []byte(tt.mockOutput)
+			}
+
+			branches, err := getAvailableBranches()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && len(branches) != tt.wantCount {
+				t.Errorf("got %d branches, want %d: %v", len(branches), tt.wantCount, branches)
+			}
+		})
+	}
+}
+
+func TestGetWorktreeListPorcelainError(t *testing.T) {
+	mock := withMockGit(t)
+	mock.errors["worktree list --porcelain"] = fmt.Errorf("git error")
+
+	_, err := getWorktreeListPorcelain()
+	if err == nil {
+		t.Fatal("expected error from getWorktreeListPorcelain")
+	}
+}
+
+func TestGetMergedBranchesError(t *testing.T) {
+	mock := withMockGit(t)
+	mock.errors["branch --merged main --format=%(refname:short)"] = fmt.Errorf("git error")
+
+	_, err := getMergedBranches("main")
+	if err == nil {
+		t.Fatal("expected error from getMergedBranches")
+	}
+}
+
+func TestGetMergedBranchesFiltersBase(t *testing.T) {
+	mock := withMockGit(t)
+	mock.outputs["branch --merged main --format=%(refname:short)"] = []byte("main\nmaster\nfeature-done\n")
+
+	branches, err := getMergedBranches("main")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(branches) != 1 || branches[0] != "feature-done" {
+		t.Errorf("getMergedBranches() = %v, want [feature-done]", branches)
+	}
+}
+
+func TestWorktreeExistsMock(t *testing.T) {
+	tests := []struct {
+		name            string
+		porcelainOutput string
+		porcelainError  error
+		searchBranch    string
+		wantPath        string
+		wantExists      bool
+	}{
+		{
+			name: "not found",
+			porcelainOutput: "worktree /home/user/repo\n" +
+				"HEAD abc1234\n" +
+				"branch refs/heads/main\n" +
+				"\n",
+			searchBranch: "feature",
+			wantExists:   false,
+		},
+		{
+			name: "found",
+			porcelainOutput: "worktree /home/user/repo\n" +
+				"HEAD abc1234\n" +
+				"branch refs/heads/main\n" +
+				"\n" +
+				"worktree /tmp/wt/feature\n" +
+				"HEAD def5678\n" +
+				"branch refs/heads/feature\n" +
+				"\n",
+			searchBranch: "feature",
+			wantPath:     "/tmp/wt/feature",
+			wantExists:   true,
+		},
+		{
+			name:           "git error",
+			porcelainError: fmt.Errorf("git error"),
+			searchBranch:   "feature",
+			wantExists:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := withMockGit(t)
+			if tt.porcelainError != nil {
+				mock.errors["worktree list --porcelain"] = tt.porcelainError
+			} else {
+				mock.outputs["worktree list --porcelain"] = []byte(tt.porcelainOutput)
+			}
+
+			path, exists := worktreeExists(tt.searchBranch)
+			if exists != tt.wantExists {
+				t.Errorf("worktreeExists() exists = %v, want %v", exists, tt.wantExists)
+			}
+			if path != tt.wantPath {
+				t.Errorf("worktreeExists() path = %q, want %q", path, tt.wantPath)
+			}
+		})
+	}
+}
+
+func TestGetWorktreeListPorcelain_ConsecutiveWithoutBlankLine(t *testing.T) {
+	mock := withMockGit(t)
+	// Two worktrees without a blank line between them — tests the
+	// "current.Path != ''" check inside the worktree prefix case.
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /first\n" +
+			"HEAD aaa\n" +
+			"branch refs/heads/main\n" +
+			"worktree /second\n" +
+			"HEAD bbb\n" +
+			"branch refs/heads/feat\n")
+
+	entries, err := getWorktreeListPorcelain()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0].Path != "/first" {
+		t.Errorf("entries[0].Path = %q, want /first", entries[0].Path)
+	}
+	if entries[1].Path != "/second" {
+		t.Errorf("entries[1].Path = %q, want /second", entries[1].Path)
+	}
+}
+
+func TestGetRepoInfo_BareRepo(t *testing.T) {
+	mock := withMockGit(t)
+	mock.errors["rev-parse --show-toplevel"] = fmt.Errorf("not a worktree")
+	mock.outputs["rev-parse --is-bare-repository"] = []byte("true")
+	mock.outputs["rev-parse --absolute-git-dir"] = []byte("/home/user/repo.git")
+	mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/myrepo.git")
+	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo.git\nHEAD abc\nbranch refs/heads/main\nbare\n\n")
+
+	info, err := getRepoInfo()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.Name != "myrepo" {
+		t.Errorf("Name = %q, want myrepo", info.Name)
+	}
+}
+
+func TestGetRepoInfo_NotARepo(t *testing.T) {
+	mock := withMockGit(t)
+	mock.errors["rev-parse --show-toplevel"] = fmt.Errorf("fatal")
+	mock.errors["rev-parse --is-bare-repository"] = fmt.Errorf("fatal")
+
+	_, err := getRepoInfo()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "not in a git repository") {
+		t.Errorf("error = %q, want 'not in a git repository'", err)
+	}
+}
+
+func TestGetRepoInfo_BareAbsGitDirFails(t *testing.T) {
+	mock := withMockGit(t)
+	mock.errors["rev-parse --show-toplevel"] = fmt.Errorf("fatal")
+	mock.outputs["rev-parse --is-bare-repository"] = []byte("true")
+	mock.errors["rev-parse --absolute-git-dir"] = fmt.Errorf("fatal")
+
+	_, err := getRepoInfo()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestGetRepoInfo_NoRemoteURL(t *testing.T) {
+	mock := withMockGit(t)
+	mock.outputs["rev-parse --show-toplevel"] = []byte("/home/user/myrepo")
+	mock.errors["remote get-url origin"] = fmt.Errorf("no remote")
+	mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
+	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/myrepo\nHEAD abc\nbranch refs/heads/main\n\n")
+
+	info, err := getRepoInfo()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.Name != "myrepo" {
+		t.Errorf("Name = %q, want myrepo", info.Name)
+	}
+	if info.Host != "" {
+		t.Errorf("Host = %q, want empty", info.Host)
+	}
+}
+
+func TestGetRepoInfo_AbsoluteGitCommonDir(t *testing.T) {
+	mock := withMockGit(t)
+	mock.outputs["rev-parse --show-toplevel"] = []byte("/home/user/myrepo")
+	mock.outputs["remote get-url origin"] = []byte("git@github.com:owner/myrepo.git")
+	mock.outputs["rev-parse --git-common-dir"] = []byte("/home/user/myrepo/.git")
+	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/myrepo\nHEAD abc\nbranch refs/heads/main\n\n")
+
+	info, err := getRepoInfo()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.Name != "myrepo" {
+		t.Errorf("Name = %q, want myrepo", info.Name)
+	}
+}
+
+func TestGetRepoInfo_GitCommonDirBare(t *testing.T) {
+	mock := withMockGit(t)
+	mock.outputs["rev-parse --show-toplevel"] = []byte("/home/user/repo")
+	// No remote origin, so fallback to common-dir based name.
+	mock.errors["remote get-url origin"] = fmt.Errorf("no remote")
+	// common-dir returns a bare repo path (no .git suffix -> base is used directly).
+	mock.outputs["rev-parse --git-common-dir"] = []byte("/home/user/myrepo.git")
+	mock.outputs["symbolic-ref refs/remotes/origin/HEAD"] = []byte("refs/remotes/origin/main")
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/repo\nHEAD abc\nbranch refs/heads/main\n\n")
+
+	info, err := getRepoInfo()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.Name != "myrepo" {
+		t.Errorf("Name = %q, want myrepo", info.Name)
+	}
+}
+
+func TestGetMainWorktreePath_BareRepo(t *testing.T) {
+	mock := withMockGit(t)
+	// Simulate error listing worktrees, so bare fallback path is used.
+	mock.errors["worktree list --porcelain"] = fmt.Errorf("no worktrees")
+
+	got := getMainWorktreePath("main", "myrepo", "/home/user/repo.git", true)
+	want := filepath.Join("/home/user", "myrepo")
+	if got != want {
+		t.Errorf("getMainWorktreePath(bare) = %q, want %q", got, want)
+	}
+}
+
+func TestGetMainWorktreePath_FallbackToRepoName(t *testing.T) {
+	mock := withMockGit(t)
+	// No worktree matches default branch "main", but one matches repo name.
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /home/user/myrepo\nHEAD abc\nbranch refs/heads/develop\n\n" +
+			"worktree /tmp/wt/feat\nHEAD def\nbranch refs/heads/feat\n\n")
+
+	got := getMainWorktreePath("main", "myrepo", "/home/user/myrepo", false)
+	if got != "/home/user/myrepo" {
+		t.Errorf("got %q, want /home/user/myrepo", got)
+	}
+}
+
+func TestGetMainWorktreePath_FallbackToFirstEntry(t *testing.T) {
+	mock := withMockGit(t)
+	// No worktree matches default branch or repo name.
+	mock.outputs["worktree list --porcelain"] = []byte(
+		"worktree /tmp/unknown\nHEAD abc\nbranch refs/heads/develop\n\n")
+
+	got := getMainWorktreePath("main", "myrepo", "/tmp/unknown", false)
+	if got != "/tmp/unknown" {
+		t.Errorf("got %q, want /tmp/unknown", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// isDirEmpty
+// ---------------------------------------------------------------------------
+
 func TestIsDirEmpty(t *testing.T) {
 	tests := []struct {
 		name      string

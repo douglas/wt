@@ -811,3 +811,190 @@ func TestRemoveShellConfig_JSONMode(t *testing.T) {
 		t.Error("config still contains start marker after removal")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Tests migrated from mock_test.go
+// ---------------------------------------------------------------------------
+
+func TestInstallShellConfig_JSONModeUpdateExisting(t *testing.T) {
+	withAppConfig(t)
+	appCfg.OutputFormat = "json"
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+	content := "# preamble\n" + markerStart + "\neval \"$(wt shellenv)\"\n" + markerEnd + "\n# postamble\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := installShellConfig(configPath, "bash", false, true); err != nil {
+			t.Fatalf("installShellConfig failed: %v", err)
+		}
+	})
+
+	// JSON mode should suppress "Updated" text.
+	if strings.Contains(output, "Updated") {
+		t.Errorf("expected no text output in JSON mode, got: %s", output)
+	}
+}
+
+func TestInstallShellConfig_DryRunJSONMode(t *testing.T) {
+	withAppConfig(t)
+	appCfg.OutputFormat = "json"
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+
+	output := captureStdout(t, func() {
+		if err := installShellConfig(configPath, "bash", true, true); err != nil {
+			t.Fatalf("installShellConfig dry-run failed: %v", err)
+		}
+	})
+
+	// JSON mode + dry run should suppress "Would append" text.
+	if strings.Contains(output, "Would") {
+		t.Errorf("expected no text in JSON dry-run mode, got: %s", output)
+	}
+}
+
+func TestRemoveShellConfig_NonexistentJSONMode(t *testing.T) {
+	withAppConfig(t)
+	appCfg.OutputFormat = "json"
+
+	output := captureStdout(t, func() {
+		err := removeShellConfig("/nonexistent/path/.bashrc", "bash", false)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+	})
+
+	// JSON mode should suppress "No configuration found" text.
+	if strings.Contains(output, "No configuration") {
+		t.Errorf("expected no text in JSON mode, got: %s", output)
+	}
+}
+
+func TestRemoveShellConfig_NoMarkersJSONMode(t *testing.T) {
+	withAppConfig(t)
+	appCfg.OutputFormat = "json"
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+	if err := os.WriteFile(configPath, []byte("# some config\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := captureStdout(t, func() {
+		err := removeShellConfig(configPath, "bash", false)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+	})
+
+	if strings.Contains(output, "No wt configuration") {
+		t.Errorf("expected no text in JSON mode, got: %s", output)
+	}
+}
+
+func TestInstallShellConfig_WriteFileError(t *testing.T) {
+	// Create a file with markers, then make it read-only so WriteFile fails.
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+	content := "# preamble\n" + markerStart + "\neval \"$(wt shellenv)\"\n" + markerEnd + "\n# postamble\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(configPath, 0o644) })
+
+	err := installShellConfig(configPath, "bash", false, true)
+	if err == nil {
+		t.Fatal("expected error when file is read-only")
+	}
+	if !strings.Contains(err.Error(), "failed to write") {
+		t.Errorf("error = %q, want 'failed to write'", err)
+	}
+}
+
+func TestRemoveShellConfig_WriteFileError(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+	content := markerStart + "\neval \"$(wt shellenv)\"\n" + markerEnd + "\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(configPath, 0o644) })
+
+	err := removeShellConfig(configPath, "bash", false)
+	if err == nil {
+		t.Fatal("expected error when file is read-only")
+	}
+	if !strings.Contains(err.Error(), "failed to write") {
+		t.Errorf("error = %q, want 'failed to write'", err)
+	}
+}
+
+func TestInstallShellConfig_WriteStringError(t *testing.T) {
+	// Instead, let me cover the "config doesn't end with newline" path.
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+	// File without trailing newline.
+	if err := os.WriteFile(configPath, []byte("# config"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := installShellConfig(configPath, "bash", false, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should have added a newline before the marker.
+	if !strings.Contains(string(content), "# config\n\n"+markerStart) {
+		t.Errorf("expected newline before marker, got: %q", string(content))
+	}
+}
+
+func TestDetectTargetState_StatError(t *testing.T) {
+	// Use a path that triggers a stat error other than "not exist".
+	// A path component that is a file (not dir) causes ENOTDIR.
+	tmpDir := t.TempDir()
+	blocker := filepath.Join(tmpDir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Stat on blocker/child fails with ENOTDIR.
+	_, err := detectTargetState(filepath.Join(blocker, "child"))
+	if err == nil {
+		t.Fatal("expected error for stat through non-directory")
+	}
+	if !strings.Contains(err.Error(), "failed to stat target path") {
+		t.Errorf("error = %q, want 'failed to stat target path'", err)
+	}
+}
+
+func TestRemoveShellConfig_DryRunJSONMode(t *testing.T) {
+	withAppConfig(t)
+	appCfg.OutputFormat = "json"
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".bashrc")
+	content := markerStart + "\neval \"$(wt shellenv)\"\n" + markerEnd + "\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := captureStdout(t, func() {
+		err := removeShellConfig(configPath, "bash", true)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+	})
+
+	if strings.Contains(output, "Would remove") {
+		t.Errorf("expected no text in JSON dry-run mode, got: %s", output)
+	}
+}

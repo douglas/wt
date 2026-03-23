@@ -969,3 +969,29 @@ func TestUnquoteStringEdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Tests migrated from mock_test.go
+// ---------------------------------------------------------------------------
+
+func TestWriteDefaultConfig_WriteFileFails(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Create the parent dir and make it read-only so WriteFile fails.
+	dir := filepath.Join(tmpDir, "wt")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+
+	path := filepath.Join(dir, "config.toml")
+	err := writeDefaultConfig(path, false)
+	if err == nil {
+		t.Fatal("expected error when WriteFile fails")
+	}
+	if !strings.Contains(err.Error(), "failed to write config file") {
+		t.Errorf("error = %q, want 'failed to write config file'", err)
+	}
+}
