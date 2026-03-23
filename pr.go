@@ -291,6 +291,11 @@ func checkoutPROrMR(cmd *cobra.Command, input string, remoteType RemoteType) err
 	postHookName := "post_" + hookPrefix
 	_ = runHooks(postHookName, getHooks(postHookName), hookEnv)
 
+	// Copy files from main worktree if configured
+	if len(appCfg.CopyFiles.Paths) > 0 {
+		_ = copyFilesToWorktree(info.Main, path, appCfg.CopyFiles.Paths)
+	}
+
 	if jsonMode {
 		return emitJSONSuccess(cmd, map[string]any{
 			"status":      "created",

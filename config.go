@@ -16,6 +16,13 @@ type Config struct {
 	Pattern   string
 	Separator string
 	Hooks     Hooks
+	CopyFiles CopyFiles
+}
+
+// CopyFiles holds the list of file paths to copy from the main worktree
+// into newly created worktrees.
+type CopyFiles struct {
+	Paths []string
 }
 
 // Hooks holds pre/post command hook commands.
@@ -47,6 +54,7 @@ type AppConfig struct {
 	Pattern         string
 	Separator       string
 	Hooks           Hooks
+	CopyFiles       CopyFiles
 	ConfigFilePath  string
 	ConfigFileFound bool
 	ConfigSources   configSource
@@ -99,6 +107,12 @@ const defaultConfigTemplate = `# wt configuration file
 # post_create = ["test -f $WT_MAIN/.env && cp $WT_MAIN/.env $WT_PATH/.env || true"]
 # post_checkout = ["cd $WT_PATH && npm install"]
 # pre_remove = ["echo Removing $WT_PATH"]
+
+# Copy files — copy files from the main worktree into new worktrees.
+# Files that don't exist in the main worktree are skipped with a warning.
+#
+# [copy_files]
+# paths = [".env", ".tool-versions", ".envrc"]
 `
 
 // configDir returns the directory where wt config files are stored.
@@ -146,8 +160,9 @@ func loadWorktreeConfig() {
 		Separator: "default",
 	}
 
-	// Reset hooks
+	// Reset hooks and copy_files
 	appCfg.Hooks = Hooks{}
+	appCfg.CopyFiles = CopyFiles{}
 
 	// 2. Load config file
 	appCfg.ConfigFilePath = resolveConfigPath(configFlag)
@@ -173,6 +188,7 @@ func loadWorktreeConfig() {
 				appCfg.ConfigSources.Separator = "config file"
 			}
 			appCfg.Hooks = cfg.Hooks
+			appCfg.CopyFiles = cfg.CopyFiles
 		}
 	}
 
@@ -234,7 +250,12 @@ func parseConfigFile(path string) (Config, error) {
 		// Parse value: string array or quoted string
 		if strings.HasPrefix(val, "[") {
 			arr := parseStringArray(val)
-			setHookField(&cfg.Hooks, section, key, arr)
+			switch {
+			case section == "hooks":
+				setHookField(&cfg.Hooks, section, key, arr)
+			case section == "copy_files" && key == "paths":
+				cfg.CopyFiles.Paths = arr
+			}
 		} else {
 			s := unquoteString(val)
 			if section == "" {
