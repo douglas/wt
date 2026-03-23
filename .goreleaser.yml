@@ -56,7 +56,7 @@ aurs:
       - 'Douglas Soares de Andrade <contato@douglasandrade.com>'
     license: MIT
     private_key: '{{ .Env.AUR_SSH_KEY }}'
-    git_url: 'ssh://aur@aur.archlinux.org/wt-go.git'
+    git_url: 'ssh://aur@aur.archlinux.org/wt-go-bin.git'
     provides:
       - wt
     conflicts:
