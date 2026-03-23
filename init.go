@@ -121,6 +121,23 @@ const (
 	markerEnd   = "# <<< wt initialize <<<"
 )
 
+// rejectSymlink returns an error if the given path is a symlink.
+// This prevents symlink attacks where writing to a symlinked rc file
+// would modify the symlink target (e.g., a system file).
+func rejectSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil // file doesn't exist yet, safe to create
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check %s: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to modify %s: file is a symlink", path)
+	}
+	return nil
+}
+
 // detectShell determines which shell to configure based on args or environment.
 func detectShell(args []string) string {
 	// 1. Explicit argument
@@ -234,6 +251,11 @@ func installShellConfig(configPath, shell string, dryRun, noPrompt bool) error {
 		return fmt.Errorf("unsupported shell: %s", shell)
 	}
 
+	// Reject symlinks to prevent writing through to unintended files
+	if err := rejectSymlink(configPath); err != nil {
+		return err
+	}
+
 	// Read existing config
 	existing, err := os.ReadFile(configPath)
 	if err != nil && !os.IsNotExist(err) {
@@ -328,6 +350,12 @@ func installShellConfig(configPath, shell string, dryRun, noPrompt bool) error {
 func removeShellConfig(configPath, shell string, dryRun bool) error {
 	_ = shell
 	jsonMode := isJSONOutput()
+
+	// Reject symlinks to prevent writing through to unintended files
+	if err := rejectSymlink(configPath); err != nil {
+		return err
+	}
+
 	existing, err := os.ReadFile(configPath)
 	if os.IsNotExist(err) {
 		if !jsonMode {

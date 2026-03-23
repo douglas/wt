@@ -13,27 +13,34 @@ import (
 // Paths that escape the source or destination directory are rejected.
 // Symlinks are skipped to prevent following links to unintended files.
 func copyFilesToWorktree(mainPath, wtPath string, paths []string) error {
-	absMain, err := filepath.Abs(mainPath)
+	if len(paths) == 0 {
+		return nil
+	}
+
+	// Resolve symlinks in root paths so the bounds check cannot be bypassed
+	// by a symlinked parent directory (e.g., repo -> /etc).
+	resolvedMain, err := filepath.EvalSymlinks(mainPath)
 	if err != nil {
 		return fmt.Errorf("copy_files: resolve main path: %w", err)
 	}
-	absWT, err := filepath.Abs(wtPath)
+	resolvedWT, err := filepath.EvalSymlinks(wtPath)
 	if err != nil {
 		return fmt.Errorf("copy_files: resolve worktree path: %w", err)
 	}
 
 	for _, rel := range paths {
-		src := filepath.Join(mainPath, rel)
-		dst := filepath.Join(wtPath, rel)
+		src := filepath.Join(resolvedMain, rel)
+		dst := filepath.Join(resolvedWT, rel)
 
-		// Validate paths stay within their respective roots
+		// Validate paths stay within their respective roots.
+		// Use Abs to normalize after Join (handles .. in rel).
 		absSrc, _ := filepath.Abs(src)
 		absDst, _ := filepath.Abs(dst)
-		if !isChildPath(absSrc, absMain) {
+		if !isChildPath(absSrc, resolvedMain) {
 			fmt.Fprintf(os.Stderr, "Warning: copy_files: %s escapes main worktree, skipping\n", rel)
 			continue
 		}
-		if !isChildPath(absDst, absWT) {
+		if !isChildPath(absDst, resolvedWT) {
 			fmt.Fprintf(os.Stderr, "Warning: copy_files: %s escapes worktree directory, skipping\n", rel)
 			continue
 		}

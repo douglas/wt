@@ -170,7 +170,7 @@ func loadWorktreeConfig() {
 	appCfg.ConfigFilePath = resolveConfigPath(configFlag)
 	appCfg.ConfigFileFound = false
 
-	if _, err := os.Stat(appCfg.ConfigFilePath); err == nil {
+	if info, err := os.Stat(appCfg.ConfigFilePath); err == nil && info.Mode().IsRegular() {
 		appCfg.ConfigFileFound = true
 		if cfg, err := parseConfigFile(appCfg.ConfigFilePath); err == nil {
 			if cfg.Root != "" {
