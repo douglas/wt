@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-03-23
+
+### Build & Distribution
+
+- Automated AUR package publishing on new releases via GoReleaser
+- Package available as `wt-go` on AUR (`yay -S wt-go`)
+
 ## [0.2.0] - 2026-03-23
 
 ### Features

@@ -47,6 +47,31 @@ changelog:
       - Merge pull request
       - Merge branch
 
+# AUR package
+aurs:
+  - name: wt-go
+    homepage: https://github.com/douglas/wt
+    description: Git worktree manager with organized directory structure (Go implementation)
+    maintainers:
+      - 'Douglas Soares de Andrade <contato@douglasandrade.com>'
+    license: MIT
+    private_key: '{{ .Env.AUR_KEY }}'
+    git_url: 'ssh://aur@aur.archlinux.org/wt-go.git'
+    provides:
+      - wt
+    conflicts:
+      - wt
+      - wt-zig
+    depends:
+      - glibc
+      - git
+    optdepends:
+      - 'github-cli: for wt pr command'
+      - 'glab: for wt mr command'
+    package: |-
+      install -Dm755 wt "${pkgdir}/usr/bin/wt"
+      install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/wt-go/LICENSE"
+
 release:
   github:
     owner: douglas
