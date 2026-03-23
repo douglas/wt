@@ -71,7 +71,7 @@ var configFlag string
 
 // defaultConfigTemplate is the content written by `wt config init`.
 const defaultConfigTemplate = `# wt configuration file
-# See: https://github.com/timvw/wt#configuration
+# See: https://github.com/douglas/wt#configuration
 
 # Root directory for worktrees (default: ~/dev/worktrees)
 # root = "~/dev/worktrees"

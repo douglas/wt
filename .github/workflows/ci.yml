@@ -71,7 +71,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: timvw/wt
+          slug: douglas/wt
           files: ./coverage.out
           fail_ci_if_error: false
 

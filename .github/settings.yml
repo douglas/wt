@@ -3,7 +3,7 @@
 repository:
   name: wt
   description: "A fast, simple Git worktree helper written in Go"
-  homepage: https://github.com/timvw/wt
+  homepage: https://github.com/douglas/wt
   topics:
     - git
     - worktree
