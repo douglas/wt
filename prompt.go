@@ -10,8 +10,8 @@ import (
 	"golang.org/x/term"
 )
 
-// errCancelled is returned when the user cancels a prompt via ESC or Ctrl-C.
-var errCancelled = fmt.Errorf("selection cancelled")
+// errCancelled is a package-level alias for ErrCancelled (defined in errors.go).
+var errCancelled = ErrCancelled
 
 // openTTY opens /dev/tty for reading user input directly, bypassing
 // stdin which may be captured by shell command substitution.

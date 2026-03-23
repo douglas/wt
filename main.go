@@ -1,3 +1,5 @@
+// Package main implements wt, a git worktree management CLI
+// with organized directory structure and multi-strategy support.
 package main
 
 import (
@@ -12,8 +14,61 @@ import (
 var version = "dev"
 
 func init() {
+	// Step 1: Load config from file/env (must happen before buildRootCmdLong).
 	loadWorktreeConfig()
 	rootCmd.Long = buildRootCmdLong()
+
+	// Step 2: Register persistent flags.
+	rootCmd.PersistentFlags().StringVar(&configFlag, "config", "", "Path to config file (default: ~/.config/wt/config.toml)")
+	rootCmd.PersistentFlags().StringVar(&appCfg.OutputFormat, "format", formatText, "Output format: text or json")
+
+	// Step 3: Custom help function that supports JSON output.
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		if !isJSONOutput() {
+			defaultHelp(cmd, args)
+			return
+		}
+
+		buf := bytes.NewBuffer(nil)
+		origOut := cmd.OutOrStdout()
+		origErr := cmd.ErrOrStderr()
+		cmd.SetOut(buf)
+		cmd.SetErr(buf)
+		defaultHelp(cmd, args)
+		cmd.SetOut(origOut)
+		cmd.SetErr(origErr)
+
+		_ = emitJSONSuccess(cmd, map[string]any{"help": buf.String()})
+	})
+
+	// Step 4: Register all commands.
+	rootCmd.AddCommand(checkoutCmd)
+	rootCmd.AddCommand(createCmd)
+	rootCmd.AddCommand(prCmd)
+	rootCmd.AddCommand(mrCmd)
+	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(removeCmd)
+	rootCmd.AddCommand(pruneCmd)
+	rootCmd.AddCommand(cleanupCmd)
+	rootCmd.AddCommand(migrateCmd)
+	rootCmd.AddCommand(shellenvCmd)
+	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(infoCmd)
+	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(examplesCmd)
+	rootCmd.AddCommand(doneCmd)
+
+	// Step 5: Register command-specific flags.
+	removeCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force removal even if worktree has modifications")
+	cleanupCmd.Flags().BoolVar(&cleanupDryRun, "dry-run", false, "Preview what would be removed without making changes")
+	cleanupCmd.Flags().BoolVarP(&cleanupForce, "force", "f", false, "Remove all merged worktrees without confirmation")
+	migrateCmd.Flags().BoolVarP(&migrateForce, "force", "f", false, "Force migration when target path exists and is non-empty")
+	initCmd.Flags().BoolVar(&initDryRun, "dry-run", false, "Preview changes without modifying files")
+	initCmd.Flags().BoolVar(&initUninstall, "uninstall", false, "Remove wt configuration from shell")
+	initCmd.Flags().BoolVar(&initNoPrompt, "no-prompt", false, "Skip activation instructions (for automated installs)")
+	configInitCmd.Flags().BoolVar(&configInitForce, "force", false, "Overwrite existing config file")
 }
 
 func main() {
@@ -52,54 +107,6 @@ var rootCmd = &cobra.Command{
 
 func printCommandHelp(cmd *cobra.Command) error {
 	return cmd.Help()
-}
-
-func init() {
-	rootCmd.PersistentFlags().StringVar(&configFlag, "config", "", "Path to config file (default: ~/.config/wt/config.toml)")
-	rootCmd.PersistentFlags().StringVar(&appCfg.OutputFormat, "format", formatText, "Output format: text or json")
-
-	defaultHelp := rootCmd.HelpFunc()
-	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		if !isJSONOutput() {
-			defaultHelp(cmd, args)
-			return
-		}
-
-		buf := bytes.NewBuffer(nil)
-		origOut := cmd.OutOrStdout()
-		origErr := cmd.ErrOrStderr()
-		cmd.SetOut(buf)
-		cmd.SetErr(buf)
-		defaultHelp(cmd, args)
-		cmd.SetOut(origOut)
-		cmd.SetErr(origErr)
-
-		_ = emitJSONSuccess(cmd, map[string]any{"help": buf.String()})
-	})
-
-	rootCmd.AddCommand(checkoutCmd)
-	rootCmd.AddCommand(createCmd)
-	rootCmd.AddCommand(prCmd)
-	rootCmd.AddCommand(mrCmd)
-	rootCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(removeCmd)
-	rootCmd.AddCommand(pruneCmd)
-	rootCmd.AddCommand(cleanupCmd)
-	rootCmd.AddCommand(migrateCmd)
-	rootCmd.AddCommand(shellenvCmd)
-	rootCmd.AddCommand(versionCmd)
-	rootCmd.AddCommand(initCmd)
-	rootCmd.AddCommand(infoCmd)
-	rootCmd.AddCommand(configCmd)
-	rootCmd.AddCommand(examplesCmd)
-	removeCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force removal even if worktree has modifications")
-	cleanupCmd.Flags().BoolVar(&cleanupDryRun, "dry-run", false, "Preview what would be removed without making changes")
-	cleanupCmd.Flags().BoolVarP(&cleanupForce, "force", "f", false, "Remove all merged worktrees without confirmation")
-	migrateCmd.Flags().BoolVarP(&migrateForce, "force", "f", false, "Force migration when target path exists and is non-empty")
-	initCmd.Flags().BoolVar(&initDryRun, "dry-run", false, "Preview changes without modifying files")
-	initCmd.Flags().BoolVar(&initUninstall, "uninstall", false, "Remove wt configuration from shell")
-	initCmd.Flags().BoolVar(&initNoPrompt, "no-prompt", false, "Skip activation instructions (for automated installs)")
-	configInitCmd.Flags().BoolVar(&configInitForce, "force", false, "Overwrite existing config file")
 }
 
 func buildRootCmdLong() string {
