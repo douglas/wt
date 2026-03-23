@@ -59,10 +59,10 @@ func TestDoneCmd_NotInWorktree(t *testing.T) {
 	mock := withMockGit(t)
 	withAppConfig(t)
 
-	// Empty worktree list → not inside a git worktree
+	// Empty worktree list -> not inside a git worktree
 	mock.outputs["worktree list --porcelain"] = []byte("")
 
-	_, err := captureRunE(t, doneCmd, nil)
+	_, err := captureRunE(t, cmdRun(t, "done"), nil)
 	if err == nil {
 		t.Fatal("expected error when not in a worktree")
 	}
@@ -90,7 +90,7 @@ func TestDoneCmd_InMainWorktree(t *testing.T) {
 		"worktree " + mainPath + "\nHEAD abc123\nbranch refs/heads/main\n\n",
 	)
 
-	_, err := captureRunE(t, doneCmd, nil)
+	_, err := captureRunE(t, cmdRun(t, "done"), nil)
 	if err == nil {
 		t.Fatal("expected error when in main worktree")
 	}
@@ -125,7 +125,7 @@ func TestDoneCmd_HappyPath(t *testing.T) {
 	mock.outputs["remote get-url origin"] = []byte("https://github.com/user/repo.git")
 	mock.outputs["rev-parse --path-format=absolute --git-common-dir"] = []byte(mainPath + "/.git")
 
-	output, err := captureRunE(t, doneCmd, nil)
+	output, err := captureRunE(t, cmdRun(t, "done"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestDoneCmd_DetachedHead(t *testing.T) {
 		"worktree " + wtPath + "\nHEAD def456\ndetached\n\n"
 	mock.outputs["worktree list --porcelain"] = []byte(porcelain)
 
-	_, err := captureRunE(t, doneCmd, nil)
+	_, err := captureRunE(t, cmdRun(t, "done"), nil)
 	if err == nil {
 		t.Fatal("expected error for detached HEAD")
 	}
@@ -193,7 +193,7 @@ func TestDoneCmd_JSON(t *testing.T) {
 	mock.outputs["remote get-url origin"] = []byte("https://github.com/user/repo.git")
 	mock.outputs["rev-parse --path-format=absolute --git-common-dir"] = []byte(mainPath + "/.git")
 
-	output, err := captureRunE(t, doneCmd, nil)
+	output, err := captureRunE(t, cmdRun(t, "done"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

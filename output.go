@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"github.com/spf13/cobra"
 )
 
 const (
@@ -37,25 +35,25 @@ func validateOutputFormat() error {
 	}
 }
 
-func commandPath(cmd *cobra.Command) string {
-	if cmd == nil {
+func commandPath(name string) string {
+	if name == "" {
 		return "wt"
 	}
-	return cmd.CommandPath()
+	return "wt " + name
 }
 
-func emitJSONSuccess(cmd *cobra.Command, data any) error {
+func emitJSONSuccess(cmdName string, data any) error {
 	if !isJSONOutput() {
 		return nil
 	}
-	return emitJSON(jsonEnvelope{OK: true, Command: commandPath(cmd), Data: data})
+	return emitJSON(jsonEnvelope{OK: true, Command: commandPath(cmdName), Data: data})
 }
 
-func emitJSONError(cmd *cobra.Command, err error) error {
+func emitJSONError(cmdName string, err error) error {
 	if !isJSONOutput() {
 		return nil
 	}
-	return emitJSON(jsonEnvelope{OK: false, Command: commandPath(cmd), Error: err.Error()})
+	return emitJSON(jsonEnvelope{OK: false, Command: commandPath(cmdName), Error: err.Error()})
 }
 
 func emitJSON(payload jsonEnvelope) error {

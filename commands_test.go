@@ -9,12 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
 
-// captureRunE calls cmd.RunE and captures stdout output.
-func captureRunE(t *testing.T, cmd *cobra.Command, args []string) (string, error) {
+// captureRunE calls run(args) and captures stdout output.
+func captureRunE(t *testing.T, run func([]string) error, args []string) (string, error) {
 	t.Helper()
 	origStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -23,7 +21,7 @@ func captureRunE(t *testing.T, cmd *cobra.Command, args []string) (string, error
 	}
 	os.Stdout = w
 
-	runErr := cmd.RunE(cmd, args)
+	runErr := run(args)
 
 	w.Close()
 	os.Stdout = origStdout
@@ -33,6 +31,16 @@ func captureRunE(t *testing.T, cmd *cobra.Command, args []string) (string, error
 		t.Fatalf("failed to read pipe: %v", err)
 	}
 	return buf.String(), runErr
+}
+
+// cmdRun looks up a command by name and returns its run function.
+func cmdRun(t *testing.T, name string) func([]string) error {
+	t.Helper()
+	cmd, ok := lookupCommand(name)
+	if !ok {
+		t.Fatalf("command %q not found in registry", name)
+	}
+	return cmd.run
 }
 
 // parseJSON unmarshals output into a generic map for assertion.
@@ -51,7 +59,7 @@ func TestVersionCmd_Text(t *testing.T) {
 	withAppConfig(t)
 	appCfg.OutputFormat = "text"
 
-	out, err := captureRunE(t, versionCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "version"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -64,7 +72,7 @@ func TestVersionCmd_JSON(t *testing.T) {
 	withAppConfig(t)
 	appCfg.OutputFormat = "json"
 
-	out, err := captureRunE(t, versionCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "version"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -89,7 +97,7 @@ func TestListCmd_Text(t *testing.T) {
 	// so the mock's echo command prints to our captured stdout.
 	mock.outputs["worktree list"] = []byte("/tmp/repo abc123 [main]\n/tmp/wt/feature def456 [feature]")
 
-	out, err := captureRunE(t, listCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "list"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,7 +115,7 @@ func TestListCmd_JSON(t *testing.T) {
 		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
 			"worktree /tmp/wt/feature\nHEAD def456\nbranch refs/heads/feature\n\n")
 
-	out, err := captureRunE(t, listCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "list"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -132,7 +140,7 @@ func TestPruneCmd_Text(t *testing.T) {
 	withAppConfig(t)
 	appCfg.OutputFormat = "text"
 
-	out, err := captureRunE(t, pruneCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "prune"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,7 +154,7 @@ func TestPruneCmd_JSON(t *testing.T) {
 	withAppConfig(t)
 	appCfg.OutputFormat = "json"
 
-	out, err := captureRunE(t, pruneCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "prune"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -173,7 +181,7 @@ func TestInfoCmd_Text(t *testing.T) {
 	appCfg.ConfigFileFound = true
 	appCfg.Separator = "/"
 
-	out, err := captureRunE(t, infoCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "info"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -195,7 +203,7 @@ func TestInfoCmd_JSON(t *testing.T) {
 	appCfg.ConfigFileFound = true
 	appCfg.Separator = "/"
 
-	out, err := captureRunE(t, infoCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "info"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -222,7 +230,7 @@ func TestConfigPathCmd_Text(t *testing.T) {
 	appCfg.OutputFormat = "text"
 	appCfg.ConfigFilePath = "/tmp/config.toml"
 
-	out, err := captureRunE(t, configPathCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "config"), []string{"path"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -236,7 +244,7 @@ func TestConfigPathCmd_JSON(t *testing.T) {
 	withAppConfig(t)
 	appCfg.OutputFormat = "json"
 
-	out, err := captureRunE(t, configPathCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "config"), []string{"path"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -270,7 +278,7 @@ func TestCheckoutCmd_BranchExists_Text(t *testing.T) {
 	appCfg.OutputFormat = "text"
 	setupCheckoutMocks(mock)
 
-	out, err := captureRunE(t, checkoutCmd, []string{"feature"})
+	out, err := captureRunE(t, cmdRun(t, "checkout"), []string{"feature"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -285,7 +293,7 @@ func TestCheckoutCmd_BranchExists_JSON(t *testing.T) {
 	appCfg.OutputFormat = "json"
 	setupCheckoutMocks(mock)
 
-	out, err := captureRunE(t, checkoutCmd, []string{"feature"})
+	out, err := captureRunE(t, cmdRun(t, "checkout"), []string{"feature"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -314,7 +322,7 @@ func TestCheckoutCmd_BranchDoesNotExist(t *testing.T) {
 	mock.errors["show-ref --verify --quiet refs/heads/new-branch"] = fmt.Errorf("not found")
 	mock.errors["show-ref --verify --quiet refs/remotes/origin/new-branch"] = fmt.Errorf("not found")
 
-	_, err := captureRunE(t, checkoutCmd, []string{"new-branch"})
+	_, err := captureRunE(t, cmdRun(t, "checkout"), []string{"new-branch"})
 	if err == nil {
 		t.Fatal("expected error for non-existent branch")
 	}
@@ -334,7 +342,7 @@ func TestCreateCmd_AlreadyExists_Text(t *testing.T) {
 	appCfg.OutputFormat = "text"
 	setupCheckoutMocks(mock)
 
-	out, err := captureRunE(t, createCmd, []string{"feature"})
+	out, err := captureRunE(t, cmdRun(t, "create"), []string{"feature"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -349,7 +357,7 @@ func TestCreateCmd_AlreadyExists_JSON(t *testing.T) {
 	appCfg.OutputFormat = "json"
 	setupCheckoutMocks(mock)
 
-	out, err := captureRunE(t, createCmd, []string{"feature"})
+	out, err := captureRunE(t, cmdRun(t, "create"), []string{"feature"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -385,7 +393,7 @@ func TestCreateCmd_NewBranch_Text(t *testing.T) {
 	mockKey := fmt.Sprintf("worktree add %s -b new-branch main", expectedPath)
 	mock.outputs[mockKey] = []byte("")
 
-	out, err := captureRunE(t, createCmd, []string{"new-branch"})
+	out, err := captureRunE(t, cmdRun(t, "create"), []string{"new-branch"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -412,7 +420,7 @@ func TestCreateCmd_NewBranch_JSON(t *testing.T) {
 	mockKey := fmt.Sprintf("worktree add %s -b new-branch main", expectedPath)
 	mock.outputs[mockKey] = []byte("")
 
-	out, err := captureRunE(t, createCmd, []string{"new-branch"})
+	out, err := captureRunE(t, cmdRun(t, "create"), []string{"new-branch"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -435,7 +443,7 @@ func TestRemoveCmd_BranchNotFound(t *testing.T) {
 	mock.outputs["worktree list --porcelain"] = []byte(
 		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n")
 
-	_, err := captureRunE(t, removeCmd, []string{"nonexistent"})
+	_, err := captureRunE(t, cmdRun(t, "remove"), []string{"nonexistent"})
 	if err == nil {
 		t.Fatal("expected error for non-existent branch")
 	}
@@ -474,7 +482,7 @@ func TestRemoveCmd_Success_Text(t *testing.T) {
 	mockKey := fmt.Sprintf("worktree remove %s", featurePath)
 	mock.outputs[mockKey] = []byte("")
 
-	out, err := captureRunE(t, removeCmd, []string{"feature"})
+	out, err := captureRunE(t, cmdRun(t, "remove"), []string{"feature"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -508,7 +516,7 @@ func TestRemoveCmd_Success_JSON(t *testing.T) {
 	mockKey := fmt.Sprintf("worktree remove %s", featurePath)
 	mock.outputs[mockKey] = []byte("")
 
-	out, err := captureRunE(t, removeCmd, []string{"feature"})
+	out, err := captureRunE(t, cmdRun(t, "remove"), []string{"feature"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -534,7 +542,7 @@ func TestCleanupCmd_NoCandidates_Text(t *testing.T) {
 	mock.outputs["worktree list --porcelain"] = []byte(
 		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n")
 
-	out, err := captureRunE(t, cleanupCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "cleanup"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -553,7 +561,7 @@ func TestCleanupCmd_NoCandidates_JSON(t *testing.T) {
 	mock.outputs["worktree list --porcelain"] = []byte(
 		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n")
 
-	out, err := captureRunE(t, cleanupCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "cleanup"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -594,7 +602,7 @@ func TestCleanupCmd_DryRun_Text(t *testing.T) {
 		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
 			fmt.Sprintf("worktree %s\nHEAD def456\nbranch refs/heads/feature-done\n\n", featurePath))
 
-	out, err := captureRunE(t, cleanupCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "cleanup"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -624,7 +632,7 @@ func TestCleanupCmd_DryRun_JSON(t *testing.T) {
 		"worktree /tmp/repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
 			fmt.Sprintf("worktree %s\nHEAD def456\nbranch refs/heads/feature-done\n\n", featurePath))
 
-	out, err := captureRunE(t, cleanupCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "cleanup"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -672,7 +680,7 @@ func TestCleanupCmd_Force_Text(t *testing.T) {
 	// Mock worktree prune (called at end of cleanup)
 	mock.outputs["worktree prune"] = []byte("")
 
-	out, err := captureRunE(t, cleanupCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "cleanup"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -707,7 +715,7 @@ func TestCleanupCmd_Force_JSON(t *testing.T) {
 	mock.outputs[mockKey] = []byte("")
 	mock.outputs["worktree prune"] = []byte("")
 
-	out, err := captureRunE(t, cleanupCmd, nil)
+	out, err := captureRunE(t, cmdRun(t, "cleanup"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

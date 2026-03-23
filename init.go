@@ -1,13 +1,12 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-
-	"github.com/spf13/cobra"
 )
 
 // Supported shells for init command.
@@ -25,10 +24,16 @@ var (
 	initNoPrompt  bool
 )
 
-var initCmd = &cobra.Command{
-	Use:   "init [shell]",
-	Short: "Initialize shell integration",
-	Long: `Add wt shell integration to your shell configuration.
+func init() {
+	initFlagSet := flag.NewFlagSet("init", flag.ContinueOnError)
+	initFlagSet.BoolVar(&initDryRun, "dry-run", false, "Preview changes without modifying files")
+	initFlagSet.BoolVar(&initUninstall, "uninstall", false, "Remove wt configuration from shell")
+	initFlagSet.BoolVar(&initNoPrompt, "no-prompt", false, "Skip activation instructions")
+
+	registerCommand(&command{
+		name:  "init",
+		short: "Initialize shell integration",
+		long: `Add wt shell integration to your shell configuration.
 
 Automatically detects your shell and updates the appropriate config file:
   - bash: ~/.bashrc
@@ -42,41 +47,62 @@ Examples:
   wt init bash         # Configure for bash specifically
   wt init --dry-run    # Preview changes without modifying files
   wt init --uninstall  # Remove wt configuration from shell`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		shell := detectShell(args)
-		if shell == "" {
-			return fmt.Errorf("could not detect shell. Please specify: wt init bash|zsh|powershell")
-		}
+		usage: "[shell]",
+		flags: initFlagSet,
+		run: func(args []string) error {
+			if len(args) > 1 {
+				return fmt.Errorf("accepts at most 1 arg, got %d", len(args))
+			}
 
-		// PowerShell init is only supported on Windows because wt shellenv
-		// only outputs PowerShell code when running on Windows
-		if shell == "powershell" && runtime.GOOS != "windows" {
-			return fmt.Errorf("PowerShell shell integration is only supported on Windows. On macOS/Linux, use: wt init bash or wt init zsh")
-		}
+			shell := detectShell(args)
+			if shell == "" {
+				return fmt.Errorf("could not detect shell. Please specify: wt init bash|zsh|powershell")
+			}
 
-		configPath := getShellConfigPath(shell)
-		if configPath == "" {
-			return fmt.Errorf("could not determine config file for %s", shell)
-		}
+			// PowerShell init is only supported on Windows because wt shellenv
+			// only outputs PowerShell code when running on Windows
+			if shell == "powershell" && runtime.GOOS != "windows" {
+				return fmt.Errorf("PowerShell shell integration is only supported on Windows. On macOS/Linux, use: wt init bash or wt init zsh")
+			}
 
-		operation := "install"
-		status := "installed"
-		if initDryRun {
-			status = "planned"
-		}
+			configPath := getShellConfigPath(shell)
+			if configPath == "" {
+				return fmt.Errorf("could not determine config file for %s", shell)
+			}
 
-		if initUninstall {
-			operation = "uninstall"
-			status = "removed"
+			operation := "install"
+			status := "installed"
 			if initDryRun {
 				status = "planned"
 			}
-			if err := removeShellConfig(configPath, shell, initDryRun); err != nil {
+
+			if initUninstall {
+				operation = "uninstall"
+				status = "removed"
+				if initDryRun {
+					status = "planned"
+				}
+				if err := removeShellConfig(configPath, shell, initDryRun); err != nil {
+					return err
+				}
+				if isJSONOutput() {
+					return emitJSONSuccess("init", map[string]any{
+						"status":      status,
+						"operation":   operation,
+						"shell":       shell,
+						"config_path": configPath,
+						"dry_run":     initDryRun,
+					})
+				}
+				return nil
+			}
+
+			if err := installShellConfig(configPath, shell, initDryRun, initNoPrompt); err != nil {
 				return err
 			}
+
 			if isJSONOutput() {
-				return emitJSONSuccess(cmd, map[string]any{
+				return emitJSONSuccess("init", map[string]any{
 					"status":      status,
 					"operation":   operation,
 					"shell":       shell,
@@ -84,25 +110,10 @@ Examples:
 					"dry_run":     initDryRun,
 				})
 			}
+
 			return nil
-		}
-
-		if err := installShellConfig(configPath, shell, initDryRun, initNoPrompt); err != nil {
-			return err
-		}
-
-		if isJSONOutput() {
-			return emitJSONSuccess(cmd, map[string]any{
-				"status":      status,
-				"operation":   operation,
-				"shell":       shell,
-				"config_path": configPath,
-				"dry_run":     initDryRun,
-			})
-		}
-
-		return nil
-	},
+		},
+	})
 }
 
 const (

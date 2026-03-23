@@ -22,7 +22,7 @@ func TestApplyMigratePlan(t *testing.T) {
 		}
 
 		output := captureStdout(t, func() {
-			err := applyMigratePlan(migrateCmd, plan)
+			err := applyMigratePlan(plan)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -47,7 +47,7 @@ func TestApplyMigratePlan(t *testing.T) {
 		}
 
 		output := captureStdout(t, func() {
-			err := applyMigratePlan(migrateCmd, plan)
+			err := applyMigratePlan(plan)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -85,7 +85,7 @@ func TestApplyMigratePlan(t *testing.T) {
 		mock.outputs[fmt.Sprintf("worktree move /old/feat %s", to)] = []byte("")
 
 		output := captureStdout(t, func() {
-			err := applyMigratePlan(migrateCmd, plan)
+			err := applyMigratePlan(plan)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -113,7 +113,7 @@ func TestApplyMigratePlan(t *testing.T) {
 		mock.outputs[fmt.Sprintf("worktree move /old/feat %s", to)] = []byte("")
 
 		output := captureStdout(t, func() {
-			err := applyMigratePlan(migrateCmd, plan)
+			err := applyMigratePlan(plan)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -152,7 +152,7 @@ func TestApplyMigratePlan(t *testing.T) {
 		mock.outputs[fmt.Sprintf("-C %s worktree repair", to)] = []byte("")
 
 		output := captureStdout(t, func() {
-			err := applyMigratePlan(migrateCmd, plan)
+			err := applyMigratePlan(plan)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -176,7 +176,7 @@ func TestApplyMigratePlan(t *testing.T) {
 		}
 
 		output := captureStdout(t, func() {
-			err := applyMigratePlan(migrateCmd, plan)
+			err := applyMigratePlan(plan)
 			if err == nil {
 				t.Fatal("expected error for failed primary move")
 			}
@@ -204,7 +204,7 @@ func TestApplyMigratePlan(t *testing.T) {
 		mock.errors[fmt.Sprintf("worktree move /old/feat %s", to)] = fmt.Errorf("move failed")
 
 		output := captureStdout(t, func() {
-			err := applyMigratePlan(migrateCmd, plan)
+			err := applyMigratePlan(plan)
 			if err == nil {
 				t.Fatal("expected error for failed secondary move")
 			}
@@ -239,7 +239,7 @@ func TestApplyMigratePlan(t *testing.T) {
 		mock.outputs[fmt.Sprintf("worktree move /old/feat %s", targetDir)] = []byte("")
 
 		output := captureStdout(t, func() {
-			err := applyMigratePlan(migrateCmd, plan)
+			err := applyMigratePlan(plan)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -311,38 +311,21 @@ func TestMovePrimaryCheckout(t *testing.T) {
 }
 
 func TestMigrateCommandRegistered(t *testing.T) {
-	found := false
-	for _, cmd := range rootCmd.Commands() {
-		if cmd.Name() == "migrate" {
-			found = true
-			break
-		}
-	}
-
+	_, found := lookupCommand("migrate")
 	if !found {
-		t.Error("migrate command not registered with root command")
+		t.Error("migrate command not registered")
 	}
 }
 
 func TestMigrateCommandFlags(t *testing.T) {
-	var migrateCommandFound bool
-	for _, cmd := range rootCmd.Commands() {
-		if cmd.Name() == "migrate" {
-			migrateCommandFound = true
-
-			forceFlag := cmd.Flags().Lookup("force")
-			if forceFlag == nil {
-				t.Error("migrate command missing --force flag")
-			} else if forceFlag.Shorthand != "f" {
-				t.Errorf("migrate --force flag shorthand = %q, want %q", forceFlag.Shorthand, "f")
-			}
-
-			break
-		}
+	cmd, found := lookupCommand("migrate")
+	if !found {
+		t.Fatal("migrate command not found")
 	}
 
-	if !migrateCommandFound {
-		t.Fatal("migrate command not found")
+	forceFlag := cmd.flags.Lookup("force")
+	if forceFlag == nil {
+		t.Error("migrate command missing --force flag")
 	}
 }
 
@@ -1794,7 +1777,7 @@ func TestApplyMigratePlan_JSONFailure(t *testing.T) {
 	}
 
 	captureStdout(t, func() {
-		err := applyMigratePlan(migrateCmd, plan)
+		err := applyMigratePlan(plan)
 		if err == nil {
 			t.Fatal("expected error for failed migration")
 		}
@@ -1828,7 +1811,7 @@ func TestApplyMigratePlan_SecondaryPrepareFail(t *testing.T) {
 	_ = mock // no git calls needed for prepare failure
 
 	output := captureStdout(t, func() {
-		err := applyMigratePlan(migrateCmd, plan)
+		err := applyMigratePlan(plan)
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -1858,7 +1841,7 @@ func TestApplyMigratePlan_PrimaryMoveJSON(t *testing.T) {
 	mock.outputs[fmt.Sprintf("-C %s worktree repair", to)] = []byte("")
 
 	output := captureStdout(t, func() {
-		err := applyMigratePlan(migrateCmd, plan)
+		err := applyMigratePlan(plan)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1880,7 +1863,7 @@ func TestApplyMigratePlan_PrimarySkipJSON(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		err := applyMigratePlan(migrateCmd, plan)
+		err := applyMigratePlan(plan)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

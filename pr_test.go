@@ -279,7 +279,7 @@ func TestCheckoutPROrMR(t *testing.T) {
 			tt.setupGit(mock)
 			tt.setupExt(ext)
 
-			err := checkoutPROrMR(nil, tt.input, tt.remoteType)
+			err := checkoutPROrMR("", tt.input, tt.remoteType)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("checkoutPROrMR() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -383,7 +383,7 @@ func TestCheckoutPROrMR_JSONExistingWorktree(t *testing.T) {
 			"\n")
 
 	output := captureStdout(t, func() {
-		err := checkoutPROrMR(prCmd, "42", RemoteGitHub)
+		err := checkoutPROrMR("pr", "42", RemoteGitHub)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -417,7 +417,7 @@ func TestCheckoutPROrMR_GitLabCreatesWorktreeJSON(t *testing.T) {
 	mock.outputs["rev-parse --git-common-dir"] = []byte(".git")
 
 	output := captureStdout(t, func() {
-		err := checkoutPROrMR(mrCmd, "99", RemoteGitLab)
+		err := checkoutPROrMR("mr", "99", RemoteGitLab)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -449,7 +449,7 @@ func TestCheckoutPROrMR_FetchFallback(t *testing.T) {
 	mock.outputs["show-ref --verify --quiet refs/heads/fork-branch"] = []byte("")
 
 	output := captureStdout(t, func() {
-		err := checkoutPROrMR(prCmd, "42", RemoteGitHub)
+		err := checkoutPROrMR("pr", "42", RemoteGitHub)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -480,7 +480,7 @@ func TestCheckoutPROrMR_WorktreeCreateFails(t *testing.T) {
 	// Worktree add fails.
 	mock.errors["worktree add "+filepath.Join(appCfg.Root, "repo", "new-feat")+" new-feat"] = fmt.Errorf("worktree add failed")
 
-	err := checkoutPROrMR(prCmd, "42", RemoteGitHub)
+	err := checkoutPROrMR("pr", "42", RemoteGitHub)
 	if err == nil {
 		t.Fatal("expected error when worktree creation fails")
 	}
@@ -503,7 +503,7 @@ func TestCheckoutPROrMR_GetRepoInfoFails(t *testing.T) {
 	mock.outputs["worktree list --porcelain"] = []byte(
 		"worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n")
 
-	err := checkoutPROrMR(prCmd, "42", RemoteGitHub)
+	err := checkoutPROrMR("pr", "42", RemoteGitHub)
 	if err == nil {
 		t.Fatal("expected error when getRepoInfo fails")
 	}

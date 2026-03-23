@@ -66,7 +66,7 @@ var appCfg = AppConfig{
 	OutputFormat: formatText,
 }
 
-// configFlag is the --config flag value (set by cobra).
+// configFlag is the --config flag value (set by extractGlobalFlags).
 var configFlag string
 
 // defaultConfigTemplate is the content written by `wt config init`.

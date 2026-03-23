@@ -1556,10 +1556,12 @@ func TestBuildRootCmdLong(t *testing.T) {
 }
 
 func TestPrintCommandHelp(t *testing.T) {
-	err := printCommandHelp(rootCmd)
-	if err != nil {
-		t.Fatalf("printCommandHelp(rootCmd) returned error: %v", err)
+	cmd, ok := lookupCommand("version")
+	if !ok {
+		t.Fatal("version command not found")
 	}
+	// printCommandHelp does not return an error; just verify it doesn't panic.
+	printCommandHelp(cmd)
 }
 
 func TestRunHooksMultiplePostContinueOnFailure(t *testing.T) {

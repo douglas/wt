@@ -516,7 +516,7 @@ func TestConfigShowPatternParityBetweenTextAndJSON_Config(t *testing.T) {
 		}()
 
 		appCfg.OutputFormat = format
-		if err := configShowCmd.RunE(configShowCmd, nil); err != nil {
+		if err := runConfigShow(nil); err != nil {
 			t.Fatalf("config show failed for format %s: %v", format, err)
 		}
 

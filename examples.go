@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/spf13/cobra"
 )
 
 type usageExample struct {
@@ -490,10 +488,11 @@ func splitLines(input string) []string {
 	return strings.Split(input, "\n")
 }
 
-var examplesCmd = &cobra.Command{
-	Use:   "examples",
-	Short: "Show detailed command examples and outcomes",
-	Long: `Show a full catalog of wt command examples, including expected outcomes,
+func init() {
+	registerCommand(&command{
+		name:  "examples",
+		short: "Show detailed command examples and outcomes",
+		long: `Show a full catalog of wt command examples, including expected outcomes,
 side effects, failure modes, and follow-up actions.
 
 This command intentionally prints all topics by default. Use grep/rg if you
@@ -502,20 +501,24 @@ want to filter specific commands.
 Examples:
   wt examples
   wt --format json examples`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		topics := orderedTopics()
-		if isJSONOutput() {
-			return emitJSONSuccess(cmd, map[string]any{
-				"catalog_scope": "full",
-				"notes": []string{
-					"The examples catalog is intentionally full and unfiltered.",
-					"In --format json mode, shell wrappers must not auto-navigate.",
-				},
-				"topics": topics,
-			})
-		}
-		renderExamplesText(topics)
-		return nil
-	},
+		run: func(args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("accepts no args, got %d", len(args))
+			}
+
+			topics := orderedTopics()
+			if isJSONOutput() {
+				return emitJSONSuccess("examples", map[string]any{
+					"catalog_scope": "full",
+					"notes": []string{
+						"The examples catalog is intentionally full and unfiltered.",
+						"In --format json mode, shell wrappers must not auto-navigate.",
+					},
+					"topics": topics,
+				})
+			}
+			renderExamplesText(topics)
+			return nil
+		},
+	})
 }

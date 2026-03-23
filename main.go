@@ -3,110 +3,126 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
-
-	"github.com/spf13/cobra"
+	"strings"
 )
 
 // version is set at build time via -ldflags.
 var version = "dev"
 
-func init() {
-	// Step 1: Load config from file/env (must happen before buildRootCmdLong).
+func main() {
+	args := extractGlobalFlags(os.Args[1:])
+
+	// Load config (may be overridden by --config flag)
 	loadWorktreeConfig()
-	rootCmd.Long = buildRootCmdLong()
+	if configFlag != "" {
+		loadWorktreeConfig()
+	}
 
-	// Step 2: Register persistent flags.
-	rootCmd.PersistentFlags().StringVar(&configFlag, "config", "", "Path to config file (default: ~/.config/wt/config.toml)")
-	rootCmd.PersistentFlags().StringVar(&appCfg.OutputFormat, "format", formatText, "Output format: text or json")
+	if err := validateOutputFormat(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
-	// Step 3: Custom help function that supports JSON output.
-	defaultHelp := rootCmd.HelpFunc()
-	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		if !isJSONOutput() {
-			defaultHelp(cmd, args)
+	// No command given — print help
+	if len(args) == 0 {
+		if isJSONOutput() {
+			var help strings.Builder
+			origStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+			printUsage()
+			w.Close()
+			os.Stdout = origStdout
+			buf := make([]byte, 64*1024)
+			n, _ := r.Read(buf)
+			help.Write(buf[:n])
+			_ = emitJSONSuccess("", map[string]any{"help": help.String()})
 			return
 		}
-
-		buf := bytes.NewBuffer(nil)
-		origOut := cmd.OutOrStdout()
-		origErr := cmd.ErrOrStderr()
-		cmd.SetOut(buf)
-		cmd.SetErr(buf)
-		defaultHelp(cmd, args)
-		cmd.SetOut(origOut)
-		cmd.SetErr(origErr)
-
-		_ = emitJSONSuccess(cmd, map[string]any{"help": buf.String()})
-	})
-
-	// Step 4: Register all commands.
-	rootCmd.AddCommand(checkoutCmd)
-	rootCmd.AddCommand(createCmd)
-	rootCmd.AddCommand(prCmd)
-	rootCmd.AddCommand(mrCmd)
-	rootCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(removeCmd)
-	rootCmd.AddCommand(pruneCmd)
-	rootCmd.AddCommand(cleanupCmd)
-	rootCmd.AddCommand(migrateCmd)
-	rootCmd.AddCommand(shellenvCmd)
-	rootCmd.AddCommand(versionCmd)
-	rootCmd.AddCommand(initCmd)
-	rootCmd.AddCommand(infoCmd)
-	rootCmd.AddCommand(configCmd)
-	rootCmd.AddCommand(examplesCmd)
-	rootCmd.AddCommand(doneCmd)
-
-	// Step 5: Register command-specific flags.
-	removeCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force removal even if worktree has modifications")
-	cleanupCmd.Flags().BoolVar(&cleanupDryRun, "dry-run", false, "Preview what would be removed without making changes")
-	cleanupCmd.Flags().BoolVarP(&cleanupForce, "force", "f", false, "Remove all merged worktrees without confirmation")
-	migrateCmd.Flags().BoolVarP(&migrateForce, "force", "f", false, "Force migration when target path exists and is non-empty")
-	initCmd.Flags().BoolVar(&initDryRun, "dry-run", false, "Preview changes without modifying files")
-	initCmd.Flags().BoolVar(&initUninstall, "uninstall", false, "Remove wt configuration from shell")
-	initCmd.Flags().BoolVar(&initNoPrompt, "no-prompt", false, "Skip activation instructions (for automated installs)")
-	configInitCmd.Flags().BoolVar(&configInitForce, "force", false, "Overwrite existing config file")
-}
-
-func main() {
-	// Re-load config after cobra parses flags so --config is available
-	rootCmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
-		if err := validateOutputFormat(); err != nil {
-			return err
-		}
-		if configFlag != "" {
-			loadWorktreeConfig()
-			rootCmd.Long = buildRootCmdLong()
-		}
-		return nil
+		printUsage()
+		return
 	}
-	if err := rootCmd.Execute(); err != nil {
+
+	// Handle --help / -h / help as first arg
+	cmdName := args[0]
+	if cmdName == "--help" || cmdName == "-h" || cmdName == "help" { //nolint:nestif // help dispatch logic is inherently branchy
 		if isJSONOutput() {
-			_ = emitJSONError(rootCmd, err)
+			var help strings.Builder
+			origStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+			if len(args) > 1 {
+				if cmd, ok := lookupCommand(args[1]); ok {
+					printCommandHelp(cmd)
+				} else {
+					printUsage()
+				}
+			} else {
+				printUsage()
+			}
+			w.Close()
+			os.Stdout = origStdout
+			buf := make([]byte, 64*1024)
+			n, _ := r.Read(buf)
+			help.Write(buf[:n])
+			_ = emitJSONSuccess("", map[string]any{"help": help.String()})
+			return
+		}
+		if len(args) > 1 {
+			if cmd, ok := lookupCommand(args[1]); ok {
+				printCommandHelp(cmd)
+				return
+			}
+		}
+		printUsage()
+		return
+	}
+
+	cmd, ok := lookupCommand(cmdName)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "unknown command: %s\nRun 'wt --help' for usage.\n", cmdName)
+		os.Exit(1)
+	}
+
+	// Check for --help on the command itself
+	cmdArgs := args[1:]
+	for _, a := range cmdArgs {
+		if a == "--help" || a == "-h" {
+			if isJSONOutput() {
+				var help strings.Builder
+				origStdout := os.Stdout
+				r, w, _ := os.Pipe()
+				os.Stdout = w
+				printCommandHelp(cmd)
+				w.Close()
+				os.Stdout = origStdout
+				buf := make([]byte, 64*1024)
+				n, _ := r.Read(buf)
+				help.Write(buf[:n])
+				_ = emitJSONSuccess(cmd.name, map[string]any{"help": help.String()})
+				return
+			}
+			printCommandHelp(cmd)
+			return
+		}
+	}
+
+	// Parse command-specific flags
+	cmd.flags.SetOutput(os.Stderr)
+	if err := cmd.flags.Parse(cmdArgs); err != nil {
+		os.Exit(1)
+	}
+
+	if err := cmd.run(cmd.flags.Args()); err != nil {
+		if isJSONOutput() {
+			_ = emitJSONError(cmd.name, err)
 		} else {
 			fmt.Fprintln(os.Stderr, err)
 		}
 		os.Exit(1)
 	}
-}
-
-// rootCmd is the top-level cobra command for the wt CLI.
-var rootCmd = &cobra.Command{
-	Use:           "wt",
-	Short:         "Git worktree helper with organized directory structure",
-	Long:          "",
-	SilenceErrors: true,
-	SilenceUsage:  true,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		return printCommandHelp(cmd)
-	},
-}
-
-func printCommandHelp(cmd *cobra.Command) error {
-	return cmd.Help()
 }
 
 func buildRootCmdLong() string {

@@ -1,13 +1,14 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/spf13/cobra"
 )
+
+var migrateForce bool
 
 // migrateAction describes what to do with a worktree during migration.
 type migrateAction string
@@ -46,29 +47,36 @@ const (
 	targetDirNonEmpty
 )
 
-var migrateCmd = &cobra.Command{
-	Use:   "migrate",
-	Short: "Migrate existing worktrees to configured paths",
-	Long: `Migrate existing linked worktrees to the currently configured location strategy.
+func init() {
+	migrateFlagSet := flag.NewFlagSet("migrate", flag.ContinueOnError)
+	migrateFlagSet.BoolVar(&migrateForce, "force", false, "Allow replacement of non-empty targets during migration")
+	migrateFlagSet.BoolVar(&migrateForce, "f", false, "Allow replacement of non-empty targets during migration")
+
+	registerCommand(&command{
+		name:  "migrate",
+		short: "Migrate existing worktrees to configured paths",
+		long: `Migrate existing linked worktrees to the currently configured location strategy.
 
 If the primary checkout lives under WORKTREE_ROOT, it is moved back under ~/src.
 
 Examples:
   wt migrate
   wt migrate --force`,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		entries, err := listParsedWorktrees()
-		if err != nil {
-			return err
-		}
+		flags: migrateFlagSet,
+		run: func(_ []string) error {
+			entries, err := listParsedWorktrees()
+			if err != nil {
+				return err
+			}
 
-		plan, err := buildMigratePlan(entries, migrateForce)
-		if err != nil {
-			return err
-		}
+			plan, err := buildMigratePlan(entries, migrateForce)
+			if err != nil {
+				return err
+			}
 
-		return applyMigratePlan(cmd, plan)
-	},
+			return applyMigratePlan(plan)
+		},
+	})
 }
 
 func listParsedWorktrees() ([]parsedWorktree, error) {
@@ -271,7 +279,7 @@ func detectTargetState(target string) (targetState, error) {
 	return targetDirNonEmpty, nil
 }
 
-func applyMigratePlan(cmd *cobra.Command, plan []migrateItem) error {
+func applyMigratePlan(plan []migrateItem) error {
 	jsonMode := isJSONOutput()
 	moveCount := 0
 	skipCount := 0
@@ -375,7 +383,7 @@ func applyMigratePlan(cmd *cobra.Command, plan []migrateItem) error {
 
 	if jsonMode {
 		if failCount == 0 {
-			return emitJSONSuccess(cmd, map[string]any{
+			return emitJSONSuccess("migrate", map[string]any{
 				"force":    migrateForce,
 				"total":    len(plan),
 				"migrated": moveCount,

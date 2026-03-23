@@ -7,8 +7,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-
-	"github.com/spf13/cobra"
 )
 
 // RemoteType identifies the hosting platform for PR/MR operations.
@@ -186,7 +184,7 @@ func getPRBranchName(prNumber string, remoteType RemoteType) (string, error) {
 	return "", fmt.Errorf("invalid remote type")
 }
 
-func checkoutPROrMR(cmd *cobra.Command, input string, remoteType RemoteType) error {
+func checkoutPROrMR(cmdName string, input string, remoteType RemoteType) error {
 	jsonMode := isJSONOutput()
 	prNumber, err := getPRNumber(input)
 	if err != nil {
@@ -226,7 +224,7 @@ func checkoutPROrMR(cmd *cobra.Command, input string, remoteType RemoteType) err
 	// Check if worktree already exists for this branch
 	if existingPath, exists := worktreeExists(branch); exists {
 		if jsonMode {
-			return emitJSONSuccess(cmd, map[string]any{
+			return emitJSONSuccess(cmdName, map[string]any{
 				"status":      "exists",
 				"id":          prNumber,
 				"kind":        prefix,
@@ -297,7 +295,7 @@ func checkoutPROrMR(cmd *cobra.Command, input string, remoteType RemoteType) err
 	}
 
 	if jsonMode {
-		return emitJSONSuccess(cmd, map[string]any{
+		return emitJSONSuccess(cmdName, map[string]any{
 			"status":      "created",
 			"id":          prNumber,
 			"kind":        prefix,

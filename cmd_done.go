@@ -1,18 +1,22 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
-
-	"github.com/spf13/cobra"
 )
 
 var doneForce bool
 
-var doneCmd = &cobra.Command{
-	Use:   "done",
-	Short: "Remove current worktree and navigate back",
-	Long: `Remove the linked worktree you're currently in and navigate back to the main checkout.
+func init() {
+	doneFlagSet := flag.NewFlagSet("done", flag.ContinueOnError)
+	doneFlagSet.BoolVar(&doneForce, "force", false, "Force removal even if worktree has modifications")
+	doneFlagSet.BoolVar(&doneForce, "f", false, "Force removal even if worktree has modifications")
+
+	registerCommand(&command{
+		name:  "done",
+		short: "Remove current worktree and navigate back",
+		long: `Remove the linked worktree you're currently in and navigate back to the main checkout.
 
 This is a convenience command that detects which worktree contains your current directory,
 removes it (running pre/post remove hooks), and auto-navigates back to the main repo.
@@ -23,85 +27,87 @@ Examples:
   cd ~/dev/worktrees/myrepo/feature-branch
   wt done           # Remove this worktree, cd back to main
   wt done --force   # Force removal even with uncommitted changes`,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		jsonMode := isJSONOutput()
+		flags: doneFlagSet,
+		run: func(_ []string) error {
+			jsonMode := isJSONOutput()
 
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current directory: %w", err)
-		}
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
 
-		entries, err := getWorktreeListPorcelain()
-		if err != nil {
-			return fmt.Errorf("failed to list worktrees: %w", err)
-		}
+			entries, err := getWorktreeListPorcelain()
+			if err != nil {
+				return fmt.Errorf("failed to list worktrees: %w", err)
+			}
 
-		if len(entries) == 0 {
-			return fmt.Errorf("not inside a git worktree")
-		}
+			if len(entries) == 0 {
+				return fmt.Errorf("not inside a git worktree")
+			}
 
-		// Check if we're in the main worktree (entry[0])
-		mainPath := entries[0].Path
-		if isInsideWorktree(cwd, mainPath) {
-			return fmt.Errorf("cannot remove the main worktree; use 'wt remove <branch>' from a linked worktree")
-		}
+			// Check if we're in the main worktree (entry[0])
+			mainPath := entries[0].Path
+			if isInsideWorktree(cwd, mainPath) {
+				return fmt.Errorf("cannot remove the main worktree; use 'wt remove <branch>' from a linked worktree")
+			}
 
-		// Find which linked worktree we're in
-		entry, found := findCurrentWorktree(entries, cwd)
-		if !found {
-			return ErrNotInWorktree
-		}
+			// Find which linked worktree we're in
+			entry, found := findCurrentWorktree(entries, cwd)
+			if !found {
+				return ErrNotInWorktree
+			}
 
-		if entry.Branch == "" {
-			return fmt.Errorf("current worktree has no branch (detached HEAD)")
-		}
+			if entry.Branch == "" {
+				return fmt.Errorf("current worktree has no branch (detached HEAD)")
+			}
 
-		// Build hook env
-		info, _ := getRepoInfo()
-		hookEnv := buildHookEnv(info, entry.Branch, entry.Path)
+			// Build hook env
+			info, _ := getRepoInfo()
+			hookEnv := buildHookEnv(info, entry.Branch, entry.Path)
 
-		// Run pre-remove hooks
-		if err := runHooks("pre_remove", getHooks("pre_remove"), hookEnv); err != nil {
-			return fmt.Errorf("pre-remove hook failed: %w", err)
-		}
+			// Run pre-remove hooks
+			if err := runHooks("pre_remove", getHooks("pre_remove"), hookEnv); err != nil {
+				return fmt.Errorf("pre-remove hook failed: %w", err)
+			}
 
-		// Remove the worktree
-		gitArgs := []string{"worktree", "remove"}
-		if doneForce {
-			gitArgs = append(gitArgs, "--force")
-		}
-		gitArgs = append(gitArgs, entry.Path)
+			// Remove the worktree
+			gitArgs := []string{"worktree", "remove"}
+			if doneForce {
+				gitArgs = append(gitArgs, "--force")
+			}
+			gitArgs = append(gitArgs, entry.Path)
 
-		gitCmd := gitCmd.Command(gitArgs...)
-		if !jsonMode {
-			gitCmd.Stdout = os.Stdout
-			gitCmd.Stderr = os.Stderr
-		}
-		if err := gitCmd.Run(); err != nil {
-			return fmt.Errorf("failed to remove worktree: %w", err)
-		}
-		resetWorktreeCache()
+			gitCmd := gitCmd.Command(gitArgs...)
+			if !jsonMode {
+				gitCmd.Stdout = os.Stdout
+				gitCmd.Stderr = os.Stderr
+			}
+			if err := gitCmd.Run(); err != nil {
+				return fmt.Errorf("failed to remove worktree: %w", err)
+			}
+			resetWorktreeCache()
 
-		if err := cleanupWorktreePath(entry.Path); err != nil {
-			return err
-		}
+			if err := cleanupWorktreePath(entry.Path); err != nil {
+				return err
+			}
 
-		// Run post-remove hooks (warn only)
-		_ = runHooks("post_remove", getHooks("post_remove"), hookEnv)
+			// Run post-remove hooks (warn only)
+			_ = runHooks("post_remove", getHooks("post_remove"), hookEnv)
 
-		if jsonMode {
-			return emitJSONSuccess(cmd, map[string]any{
-				"status":      "removed",
-				"branch":      entry.Branch,
-				"path":        entry.Path,
-				"navigate_to": mainPath,
-			})
-		}
+			if jsonMode {
+				return emitJSONSuccess("done", map[string]any{
+					"status":      "removed",
+					"branch":      entry.Branch,
+					"path":        entry.Path,
+					"navigate_to": mainPath,
+				})
+			}
 
-		fmt.Printf("✓ Removed worktree: %s\n", entry.Path)
-		printCDMarker(mainPath)
-		return nil
-	},
+			fmt.Printf("✓ Removed worktree: %s\n", entry.Path)
+			printCDMarker(mainPath)
+			return nil
+		},
+	})
 }
 
 // findCurrentWorktree finds the linked worktree that contains cwd.
@@ -117,12 +123,4 @@ func findCurrentWorktree(entries []worktreeListEntry, cwd string) (worktreeListE
 		}
 	}
 	return worktreeListEntry{}, false
-}
-
-// worktreeListEntry.Branch is populated from the porcelain "branch" line.
-// For detached HEAD, Branch is empty and Detached is true.
-// findCurrentWorktree relies on the caller checking entry.Branch != ""
-// before using it for hooks or removal.
-func init() {
-	doneCmd.Flags().BoolVarP(&doneForce, "force", "f", false, "Force removal even if worktree has modifications")
 }

@@ -4,66 +4,65 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-
-	"github.com/spf13/cobra"
 )
 
-var infoCmd = &cobra.Command{
-	Use:   "info",
-	Short: "Show worktree location configuration",
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		jsonMode := isJSONOutput()
-		pattern, err := resolveWorktreePattern()
-		if err != nil {
-			pattern = appCfg.Pattern
-			if pattern == "" {
-				pattern = "unknown"
+func init() {
+	registerCommand(&command{
+		name:  "info",
+		short: "Show worktree location configuration",
+		run: func(_ []string) error {
+			jsonMode := isJSONOutput()
+			pattern, err := resolveWorktreePattern()
+			if err != nil {
+				pattern = appCfg.Pattern
+				if pattern == "" {
+					pattern = "unknown"
+				}
 			}
-		}
 
-		configStatus := "not found, using defaults"
-		if appCfg.ConfigFileFound {
-			configStatus = "found"
-		}
+			configStatus := "not found, using defaults"
+			if appCfg.ConfigFileFound {
+				configStatus = "found"
+			}
 
-		hooks := map[string][]string{
-			"pre_create":    appCfg.Hooks.PreCreate,
-			"post_create":   appCfg.Hooks.PostCreate,
-			"pre_checkout":  appCfg.Hooks.PreCheckout,
-			"post_checkout": appCfg.Hooks.PostCheckout,
-			"pre_remove":    appCfg.Hooks.PreRemove,
-			"post_remove":   appCfg.Hooks.PostRemove,
-			"pre_pr":        appCfg.Hooks.PrePR,
-			"post_pr":       appCfg.Hooks.PostPR,
-			"pre_mr":        appCfg.Hooks.PreMR,
-			"post_mr":       appCfg.Hooks.PostMR,
-		}
+			hooks := map[string][]string{
+				"pre_create":    appCfg.Hooks.PreCreate,
+				"post_create":   appCfg.Hooks.PostCreate,
+				"pre_checkout":  appCfg.Hooks.PreCheckout,
+				"post_checkout": appCfg.Hooks.PostCheckout,
+				"pre_remove":    appCfg.Hooks.PreRemove,
+				"post_remove":   appCfg.Hooks.PostRemove,
+				"pre_pr":        appCfg.Hooks.PrePR,
+				"post_pr":       appCfg.Hooks.PostPR,
+				"pre_mr":        appCfg.Hooks.PreMR,
+				"post_mr":       appCfg.Hooks.PostMR,
+			}
 
-		if jsonMode {
-			return emitJSONSuccess(cmd, map[string]any{
-				"config": map[string]string{
-					"path":      appCfg.ConfigFilePath,
-					"status":    configStatus,
-					"strategy":  appCfg.Strategy,
-					"pattern":   pattern,
-					"root":      appCfg.Root,
-					"separator": appCfg.Separator,
-				},
-				"strategies": []map[string]string{
-					{"name": "global", "pattern": "{.worktreeRoot}/{.repo.Name}/{.branch}"},
-					{"name": "sibling-repo", "pattern": "{.repo.Main}/../{.repo.Name}-{.branch}"},
-					{"name": "parent-branches", "pattern": "{.repo.Main}/../{.branch}"},
-					{"name": "parent-worktrees", "pattern": "{.repo.Main}/../{.repo.Name}.worktrees/{.branch}"},
-					{"name": "parent-dotdir", "pattern": "{.repo.Main}/../.worktrees/{.branch}"},
-					{"name": "inside-dotdir", "pattern": "{.repo.Main}/.worktrees/{.branch}"},
-					{"name": "custom", "pattern": "requires pattern setting"},
-				},
-				"pattern_variables": []string{"{.repo.Name}", "{.repo.Main}", "{.repo.Owner}", "{.repo.Host}", "{.branch}", "{.worktreeRoot}", "{.env.VARNAME}"},
-				"hooks":             hooks,
-			})
-		}
+			if jsonMode {
+				return emitJSONSuccess("info", map[string]any{
+					"config": map[string]string{
+						"path":      appCfg.ConfigFilePath,
+						"status":    configStatus,
+						"strategy":  appCfg.Strategy,
+						"pattern":   pattern,
+						"root":      appCfg.Root,
+						"separator": appCfg.Separator,
+					},
+					"strategies": []map[string]string{
+						{"name": "global", "pattern": "{.worktreeRoot}/{.repo.Name}/{.branch}"},
+						{"name": "sibling-repo", "pattern": "{.repo.Main}/../{.repo.Name}-{.branch}"},
+						{"name": "parent-branches", "pattern": "{.repo.Main}/../{.branch}"},
+						{"name": "parent-worktrees", "pattern": "{.repo.Main}/../{.repo.Name}.worktrees/{.branch}"},
+						{"name": "parent-dotdir", "pattern": "{.repo.Main}/../.worktrees/{.branch}"},
+						{"name": "inside-dotdir", "pattern": "{.repo.Main}/.worktrees/{.branch}"},
+						{"name": "custom", "pattern": "requires pattern setting"},
+					},
+					"pattern_variables": []string{"{.repo.Name}", "{.repo.Main}", "{.repo.Owner}", "{.repo.Host}", "{.branch}", "{.worktreeRoot}", "{.env.VARNAME}"},
+					"hooks":             hooks,
+				})
+			}
 
-		fmt.Printf(`Config:    %s (%s)
+			fmt.Printf(`Config:    %s (%s)
 
 Strategy:  %s
 Pattern:   %s
@@ -86,52 +85,52 @@ Note: The separator setting controls how "/" and "\" in value variables are repl
 Note: {.env.VARNAME} accesses the environment variable VARNAME (e.g. {.env.HOME}).
 `, appCfg.ConfigFilePath, configStatus, appCfg.Strategy, pattern, appCfg.Root, appCfg.Separator)
 
-		// Show configured hooks
-		hookNames := []struct {
-			name  string
-			hooks []string
-		}{
-			{"pre_create", appCfg.Hooks.PreCreate},
-			{"post_create", appCfg.Hooks.PostCreate},
-			{"pre_checkout", appCfg.Hooks.PreCheckout},
-			{"post_checkout", appCfg.Hooks.PostCheckout},
-			{"pre_remove", appCfg.Hooks.PreRemove},
-			{"post_remove", appCfg.Hooks.PostRemove},
-			{"pre_pr", appCfg.Hooks.PrePR},
-			{"post_pr", appCfg.Hooks.PostPR},
-			{"pre_mr", appCfg.Hooks.PreMR},
-			{"post_mr", appCfg.Hooks.PostMR},
-		}
-		hasHooks := false
-		for _, h := range hookNames {
-			if len(h.hooks) > 0 {
-				hasHooks = true
-				break
+			// Show configured hooks
+			hookNames := []struct {
+				name  string
+				hooks []string
+			}{
+				{"pre_create", appCfg.Hooks.PreCreate},
+				{"post_create", appCfg.Hooks.PostCreate},
+				{"pre_checkout", appCfg.Hooks.PreCheckout},
+				{"post_checkout", appCfg.Hooks.PostCheckout},
+				{"pre_remove", appCfg.Hooks.PreRemove},
+				{"post_remove", appCfg.Hooks.PostRemove},
+				{"pre_pr", appCfg.Hooks.PrePR},
+				{"post_pr", appCfg.Hooks.PostPR},
+				{"pre_mr", appCfg.Hooks.PreMR},
+				{"post_mr", appCfg.Hooks.PostMR},
 			}
-		}
-		if hasHooks {
-			fmt.Println("Hooks:")
+			hasHooks := false
 			for _, h := range hookNames {
 				if len(h.hooks) > 0 {
-					for _, cmd := range h.hooks {
-						fmt.Printf("  %-15s %s\n", h.name+":", cmd)
-					}
+					hasHooks = true
+					break
 				}
 			}
-			fmt.Println()
-		} else {
-			fmt.Println("Hooks:    (none configured)")
-			fmt.Println()
-		}
+			if hasHooks {
+				fmt.Println("Hooks:")
+				for _, h := range hookNames {
+					if len(h.hooks) > 0 {
+						for _, cmd := range h.hooks {
+							fmt.Printf("  %-15s %s\n", h.name+":", cmd)
+						}
+					}
+				}
+				fmt.Println()
+			} else {
+				fmt.Println("Hooks:    (none configured)")
+				fmt.Println()
+			}
 
-		return nil
-	},
-}
+			return nil
+		},
+	})
 
-var shellenvCmd = &cobra.Command{
-	Use:   "shellenv",
-	Short: "Output shell function for auto-cd (source this)",
-	Long: `Output shell integration code for automatic directory navigation.
+	registerCommand(&command{
+		name:  "shellenv",
+		short: "Output shell function for auto-cd (source this)",
+		long: `Output shell integration code for automatic directory navigation.
 
 Add this to the END of your ~/.bashrc or ~/.zshrc:
   source <(wt shellenv)
@@ -144,18 +143,18 @@ Note: For zsh, place this AFTER compinit to enable tab completion.
 This enables:
 - Automatic cd to worktree after checkout/create/pr/mr commands
 - Tab completion for commands and branch names`,
-	Run: func(cmd *cobra.Command, _ []string) {
-		if isJSONOutput() {
-			_ = emitJSONSuccess(cmd, map[string]string{
-				"note": "shellenv outputs shell script text; run without --format json to source it",
-			})
-			return
-		}
-		// Output OS-specific shell integration
-		// On Windows, default to PowerShell. On Unix, output bash/zsh.
-		if runtime.GOOS == "windows" {
-			// PowerShell integration for Windows
-			fmt.Print(`# PowerShell integration (Windows)
+		run: func(_ []string) error {
+			if isJSONOutput() {
+				_ = emitJSONSuccess("shellenv", map[string]string{
+					"note": "shellenv outputs shell script text; run without --format json to source it",
+				})
+				return nil
+			}
+			// Output OS-specific shell integration
+			// On Windows, default to PowerShell. On Unix, output bash/zsh.
+			if runtime.GOOS == "windows" {
+				// PowerShell integration for Windows
+				fmt.Print(`# PowerShell integration (Windows)
 # Detected via runtime.GOOS, compatible with $PSVersionTable
 # NOTE: Requires wt.exe to be in PATH or current directory
 
@@ -229,11 +228,11 @@ Register-ArgumentCompleter -CommandName wt -ScriptBlock {
     }
 }
 `)
-			return
-		}
+				return nil
+			}
 
-		// Bash/Zsh integration for Unix systems
-		os.Stdout.WriteString(`wt() {
+			// Bash/Zsh integration for Unix systems
+			os.Stdout.WriteString(`wt() {
     # In JSON mode, keep stdout machine-readable and skip auto-navigation.
     case " $* " in
         *" --format json "*|*" --format=json "*)
@@ -351,17 +350,19 @@ if [ -n "$ZSH_VERSION" ]; then
     fi
 fi
 `)
-	},
-}
+			return nil
+		},
+	})
 
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Show version information",
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		if isJSONOutput() {
-			return emitJSONSuccess(cmd, map[string]string{"version": version})
-		}
-		fmt.Printf("wt version %s\n", version)
-		return nil
-	},
+	registerCommand(&command{
+		name:  "version",
+		short: "Show version information",
+		run: func(_ []string) error {
+			if isJSONOutput() {
+				return emitJSONSuccess("version", map[string]string{"version": version})
+			}
+			fmt.Printf("wt version %s\n", version)
+			return nil
+		},
+	})
 }

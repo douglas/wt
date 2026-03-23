@@ -52,7 +52,11 @@ func topicHasTextAndJSONExamples(topic exampleTopic) bool {
 func TestExamplesRejectsTopicArgument(t *testing.T) {
 	t.Parallel()
 
-	err := examplesCmd.Args(examplesCmd, []string{"create"})
+	cmd, ok := lookupCommand("examples")
+	if !ok {
+		t.Fatal("examples command not found")
+	}
+	err := cmd.run([]string{"create"})
 	if err == nil {
 		t.Fatal("expected examples command to reject topic arguments")
 	}

@@ -83,35 +83,27 @@ func TestGetMergedBranchesFiltersBaseBranches(t *testing.T) {
 
 func TestCleanupCommandFlags(t *testing.T) {
 	// Test that the cleanup command has the expected flags
-	cmd := cleanupCmd
+	cmd, ok := lookupCommand("cleanup")
+	if !ok {
+		t.Fatal("cleanup command not found in registry")
+	}
 
-	dryRunFlag := cmd.Flags().Lookup("dry-run")
+	dryRunFlag := cmd.flags.Lookup("dry-run")
 	if dryRunFlag == nil {
 		t.Error("cleanup command missing --dry-run flag")
 	}
 
-	forceFlag := cmd.Flags().Lookup("force")
+	forceFlag := cmd.flags.Lookup("force")
 	if forceFlag == nil {
 		t.Error("cleanup command missing --force flag")
-	}
-
-	// Check shorthand for force
-	if forceFlag != nil && forceFlag.Shorthand != "f" {
-		t.Errorf("cleanup --force flag shorthand = %q, want %q", forceFlag.Shorthand, "f")
 	}
 }
 
 func TestCleanupCommandRegistered(t *testing.T) {
-	// Verify the cleanup command is registered with the root command
-	found := false
-	for _, cmd := range rootCmd.Commands() {
-		if cmd.Name() == "cleanup" {
-			found = true
-			break
-		}
-	}
+	// Verify the cleanup command is registered
+	_, found := lookupCommand("cleanup")
 	if !found {
-		t.Error("cleanup command not registered with root command")
+		t.Error("cleanup command not registered")
 	}
 }
 
@@ -175,7 +167,8 @@ func TestCleanupE2E(t *testing.T) {
 	// Test dry-run mode (should not remove anything)
 	cleanupDryRun = true
 	cleanupForce = false
-	err = cleanupCmd.RunE(cleanupCmd, []string{})
+	cleanupRun := cmdRun(t, "cleanup")
+	err = cleanupRun([]string{})
 	cleanupDryRun = false
 
 	if err != nil {
@@ -189,7 +182,7 @@ func TestCleanupE2E(t *testing.T) {
 
 	// Test force mode (should remove without prompting)
 	cleanupForce = true
-	err = cleanupCmd.RunE(cleanupCmd, []string{})
+	err = cleanupRun([]string{})
 	cleanupForce = false
 
 	if err != nil {
