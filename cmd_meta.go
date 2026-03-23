@@ -183,7 +183,7 @@ function wt {
     if ($exitCode -eq 0) {
         $cdPath = $output | Select-String -Pattern "^wt navigating to: " | ForEach-Object { $_.Line.Substring(18) }
         if ($cdPath) {
-            Set-Location $cdPath
+            Set-Location -LiteralPath $cdPath
         }
     }
     $global:LASTEXITCODE = $exitCode

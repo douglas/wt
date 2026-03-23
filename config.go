@@ -98,6 +98,8 @@ const defaultConfigTemplate = `# wt configuration file
 # pattern = "{.worktreeRoot}/{.env.FEATURE}/{.repo.Name}"
 
 # Hooks — run commands before/after wt operations
+# Security: Hook commands run with your user privileges via sh -c.
+# Always quote variables in hooks: "$WT_BRANCH", "$WT_PATH"
 # Available env vars in hooks: $WT_PATH, $WT_BRANCH, $WT_MAIN,
 #                              $WT_REPO_NAME, $WT_REPO_HOST, $WT_REPO_OWNER
 # Pre-hooks abort on failure; post-hooks warn only.
@@ -361,7 +363,7 @@ func writeDefaultConfig(path string, force bool) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	if err := os.WriteFile(path, []byte(defaultConfigTemplate), 0o644); err != nil { //nolint:gosec // config file should be world-readable
+	if err := os.WriteFile(path, []byte(defaultConfigTemplate), 0o600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 

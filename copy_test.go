@@ -161,3 +161,85 @@ paths = [".env", ".tool-versions", ".envrc"]
 		}
 	}
 }
+
+func TestCopyFilesToWorktree_PathTraversal(t *testing.T) {
+	t.Parallel()
+	mainDir := t.TempDir()
+	wtDir := t.TempDir()
+
+	// Create a file that the traversal path would try to reach
+	if err := os.WriteFile(filepath.Join(mainDir, "safe.txt"), []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Path traversal should be skipped (not error, just warning)
+	err := copyFilesToWorktree(mainDir, wtDir, []string{"../../etc/passwd", "safe.txt"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The traversal path should NOT have been copied
+	if _, err := os.Stat(filepath.Join(wtDir, "../../etc/passwd")); !os.IsNotExist(err) {
+		t.Error("path traversal file should not have been copied")
+	}
+
+	// The safe file should still be copied
+	if _, err := os.Stat(filepath.Join(wtDir, "safe.txt")); err != nil {
+		t.Error("safe.txt should have been copied despite traversal skip")
+	}
+}
+
+func TestCopyFilesToWorktree_SymlinkSkipped(t *testing.T) {
+	t.Parallel()
+	mainDir := t.TempDir()
+	wtDir := t.TempDir()
+
+	// Create a real file and a symlink to it
+	realFile := filepath.Join(mainDir, "real.txt")
+	if err := os.WriteFile(realFile, []byte("real"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realFile, filepath.Join(mainDir, "link.txt")); err != nil {
+		t.Skip("symlinks not supported on this platform")
+	}
+
+	err := copyFilesToWorktree(mainDir, wtDir, []string{"link.txt", "real.txt"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Symlink should NOT have been copied
+	if _, err := os.Stat(filepath.Join(wtDir, "link.txt")); !os.IsNotExist(err) {
+		t.Error("symlink should not have been copied")
+	}
+
+	// Real file should have been copied
+	if _, err := os.Stat(filepath.Join(wtDir, "real.txt")); err != nil {
+		t.Error("real.txt should have been copied")
+	}
+}
+
+func TestSanitizeForTerminal(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"normal text", "normal text"},
+		{"feat\x1b[2JPWNED", "feat[2JPWNED"},   // ESC stripped
+		{"hello\x00world", "helloworld"},       // null stripped
+		{"tab\there", "tabhere"},               // tab stripped
+		{"newline\nhere", "newlinehere"},       // newline stripped
+		{"unicode: résumé", "unicode: résumé"}, // UTF-8 preserved
+		{"\x7f delete", " delete"},             // DEL stripped
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			got := sanitizeForTerminal(tt.input)
+			if got != tt.want {
+				t.Errorf("sanitizeForTerminal(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

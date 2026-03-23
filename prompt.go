@@ -13,6 +13,20 @@ import (
 // errCancelled is a package-level alias for ErrCancelled (defined in errors.go).
 var errCancelled = ErrCancelled
 
+// sanitizeForTerminal strips control characters (including ANSI escape sequences)
+// from a string to prevent terminal manipulation when displaying untrusted input
+// like branch names or PR titles.
+func sanitizeForTerminal(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r >= 32 && r != 127 { // printable characters only (allow UTF-8)
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // openTTY opens /dev/tty for reading user input directly, bypassing
 // stdin which may be captured by shell command substitution.
 // Falls back to os.Stdin on Windows or if /dev/tty is unavailable.
@@ -127,9 +141,9 @@ func selectItem(label string, items []string) (int, string, error) {
 		defer tty.Close()
 	}
 
-	fmt.Fprintf(os.Stderr, "%s:\n", label)
+	fmt.Fprintf(os.Stderr, "%s:\n", sanitizeForTerminal(label))
 	for i, item := range items {
-		fmt.Fprintf(os.Stderr, "  %d) %s\n", i+1, item)
+		fmt.Fprintf(os.Stderr, "  %d) %s\n", i+1, sanitizeForTerminal(item))
 	}
 	fmt.Fprintf(os.Stderr, "Enter number [1-%d]: ", len(items))
 
