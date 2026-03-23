@@ -36,7 +36,7 @@ jobs:
           echo "  User aur" >> ~/.ssh/config
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
         env:
-          AUR_KEY: ${{ secrets.AUR_KEY }}
+          AUR_KEY: ${{ secrets.AUR_SSH_KEY }}
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
@@ -46,4 +46,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          AUR_KEY: ${{ secrets.AUR_KEY }}
+          AUR_KEY: ${{ secrets.AUR_SSH_KEY }}
